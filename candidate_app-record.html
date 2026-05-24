@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mowafak — AI Async Interview Pre-Screen</title>
+    <!-- Tailwind CSS CDN for modern, clean utility styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Poppins for clean layout typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Poppins', sans-serif; }
+    </style>
+</head>
+<body class="h-full flex flex-col justify-between text-gray-800">
+
+    <!-- Global Header -->
+    <header class="bg-white border-b border-gray-200 py-4 px-6 shadow-sm">
+        <div class="max-w-3xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="h-9 w-9 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md shadow-blue-200">M</div>
+                <div>
+                    <h1 class="text-lg font-bold text-gray-900 tracking-tight leading-none">Mowafak</h1>
+                    <p class="text-xs text-gray-500 font-medium mt-0.5">Async Pre-Screen Portal</p>
+                </div>
+            </div>
+            <div class="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 font-semibold rounded-full border border-blue-100 uppercase tracking-wider">
+                Candidate Space
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container (Acts as a dynamic Single Page View wrapper) -->
+    <main class="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
+        <div class="w-full max-w-2xl bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden transition-all duration-300">
+            
+            <!-- STAGE 1: MANDATORY RESPONSIBLE AI CONSENT GATE -->
+            <div id="consent-gate" class="block p-6 sm:p-8">
+                <div class="text-center mb-6">
+                    <div class="inline-flex items-center justify-center w-12 h-12 bg-blue-100 text-blue-600 rounded-full mb-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    </div>
+                    <h2 class="text-xl sm:text-2xl font-bold text-gray-900">Pre-Screening Verification</h2>
+                    <p class="text-sm text-gray-500 mt-1">Please read and accept our processing terms before beginning.</p>
+                </div>
+
+                <!-- Transparency & Consent Box -->
+                <div class="bg-gray-50 rounded-xl border border-gray-200 p-4 sm:p-5 mb-6 text-sm text-gray-600 space-y-3 max-h-64 overflow-y-auto">
+                    <p class="font-semibold text-gray-900">Transparency Notice & Mandatory Disclosure:</p>
+                    <p>By entering this portal, your audio responses will be recorded dynamically via browser inputs. These files are processed asynchronously using machine-learning tools including automated speech-to-text (Whisper local models) and LLM pipeline architectures.</p>
+                    <p class="border-l-4 border-blue-500 pl-3 bg-blue-50/50 py-1 font-medium text-gray-800">
+                        Critical Governance Guarantee: Automated decision-making tools or auto-rejection routes do not exist inside this pipeline. All parsed data remains an assessment advisory; final employment decisions are exclusively made by human human-resources managers.
+                    </p>
+                    <p>Your audio and extracted profiles are stored locally in secure databases and are auditable at any time to guarantee full regulatory oversight.</p>
+                </div>
+
+                <!-- Consent Toggle Input -->
+                <div class="flex items-start mb-6">
+                    <div class="flex items-center h-5">
+                        <input id="consent-checkbox" type="checkbox" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded cursor-pointer transition">
+                    </div>
+                    <label id="consent-label" for="consent-checkbox" class="ml-3 text-sm text-gray-600 select-none cursor-pointer">
+                        I explicitly give consent for my voice responses to be recorded, transcribed, and evaluated by AI systems, with final review handled by a human manager.
+                    </label>
+                </div>
+
+                <!-- Gate Actions -->
+                <button id="start-interview-btn" disabled class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl shadow-md transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2">
+                    <span>Accept & Begin Assessment</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </button>
+            </div>
+
+            <!-- STAGE 2: ACTIVE INTERVIEW ASSESSMENT WORKSPACE -->
+            <div id="interview-workspace" class="hidden p-6 sm:p-8">
+                <!-- Progress Header -->
+                <div class="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
+                    <div>
+                        <span id="question-index" class="text-xs font-bold text-blue-600 uppercase tracking-widest bg-blue-50 px-2.5 py-1 rounded-md">Question 1 of 3</span>
+                        <h3 class="text-sm font-semibold text-gray-500 mt-2">Active Screening Session</h3>
+                    </div>
+                    <!-- Live Dynamic Waveform Placeholder Status -->
+                    <div id="status-badge" class="flex items-center space-x-2 text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full font-medium">
+                        <span class="w-2 h-2 rounded-full bg-gray-400" id="status-indicator-dot"></span>
+                        <span id="status-text">Awaiting Playback</span>
+                    </div>
+                </div>
+
+                <!-- Question Text Presentation Block -->
+                <div class="bg-blue-50/40 rounded-2xl border border-blue-100 p-5 mb-8 text-center relative group">
+                    <p id="question-text" class="text-base sm:text-lg font-medium text-gray-900 leading-relaxed px-4">
+                        Loading your generated assessment question...
+                    </p>
+                    
+                    <!-- TTS Engine Audio Trigger -->
+                    <button id="speak-btn" class="mt-4 inline-flex items-center space-x-2 text-xs bg-white hover:bg-blue-50 text-blue-600 border border-blue-200 px-3.5 py-2 rounded-xl shadow-sm font-semibold transition active:scale-95">
+                        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+                        <span>Listen to Question (TTS)</span>
+                    </button>
+                </div>
+
+                <!-- Central Control Panel Area -->
+                <div class="flex flex-col items-center justify-center space-y-6">
+                    <!-- Live Recording Circular Core Button -->
+                    <div class="relative">
+                        <button id="record-btn" disabled class="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 hover:bg-gray-200 text-gray-400 rounded-full flex items-center justify-center transition shadow-inner focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+                            <svg id="mic-icon" class="w-8 h-8 sm:w-10 sm:h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                        </button>
+                        <!-- Dynamic pulse styling animation loop triggered by runtime states -->
+                        <span id="pulse-ring" class="absolute inset-0 rounded-full border-4 border-red-500 animate-ping opacity-75 hidden"></span>
+                    </div>
+
+                    <!-- Audio Metadata Status Labels -->
+                    <div class="text-center">
+                        <span id="timer" class="text-xl font-mono font-bold text-gray-400">00:00</span>
+                        <p id="recording-instruction" class="text-xs text-gray-400 font-medium mt-1">Unlock microphonic context to capture your speech response.</p>
+                    </div>
+
+                    <!-- Local Audio Playback Monitor Container -->
+                    <div id="playback-container" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 hidden flex items-center space-x-3">
+                        <span class="text-xs font-bold text-gray-500 uppercase tracking-wide px-2 py-1 bg-gray-200 rounded">Review Your Draft</span>
+                        <audio id="audio-playback" controls class="flex-grow h-8"></audio>
+                    </div>
+
+                    <!-- Secondary Operational Action Controls Row -->
+                    <div class="w-full flex items-center justify-center gap-4 pt-4 border-t border-gray-100">
+                        <button id="re-record-btn" disabled class="flex-1 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 font-medium py-2.5 px-4 rounded-xl text-sm transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+                            Clear & Re-Record
+                        </button>
+                        <button id="submit-answer-btn" disabled class="flex-1 bg-blue-600 hover:bg-blue-700 text-white border border-transparent font-medium py-2.5 px-4 rounded-xl text-sm transition shadow-sm active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+                            Submit Answer
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STAGE 3: INTERVIEW SYSTEM SUCCESS CLOSURE -->
+            <div id="success-screen" class="hidden p-8 text-center">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-green-100 text-green-600 rounded-full mb-4">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 tracking-tight">Pre-Screen Completed</h2>
+                <p class="text-sm text-gray-500 mt-2 max-w-sm mx-auto">
+                    Your audio answers have been secured. The batch processing engine will handle transcription and compile an assessment report.
+                </p>
+
+                <div class="my-6 p-4 bg-gray-50 border border-gray-200 rounded-xl text-xs text-left text-gray-600 space-y-1.5 max-w-md mx-auto">
+                    <div class="flex justify-between font-medium"><span class="text-gray-400">Pipeline Model:</span> <span class="text-gray-800">Whisper Local Batch (Base)</span></div>
+                    <div class="flex justify-between font-medium"><span class="text-gray-400">Decision Gateway:</span> <span class="text-gray-800 text-amber-600 font-semibold">Human-in-the-Loop Locked</span></div>
+                    <div class="flex justify-between font-medium"><span class="text-gray-400">Action Required:</span> <span class="text-gray-800">None. Awaiting manual HR audit review</span></div>
+                </div>
+
+                <p class="text-xs text-gray-400 italic">You can safely close this browser instance window at any time.</p>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Global Compliance Footer -->
+    <footer class="bg-gray-50 border-t border-gray-200 py-3 px-6 text-center text-xs text-gray-400 font-medium">
+        Mowafak Assessment Platform &middot; Structured Under NYC AEDT & EU AI Act Guardrails &middot; System Cost: $0
+    </footer>
+
+    <!-- Place matching JavaScript runtime script attachment block directly underneath in next prompt cycle -->
+     <!-- STAGE 2: JAVASCRIPT LOGIC ENGINE -->
+    <script>
+        // --- Core Application State Management ---
+        let currentQuestionIndex = 0;
+        let interviewQuestions = [];
+        let sessionCandidateId = "cand_" + Math.random().toString(36).substring(2, 9); // Generated unique ID session
+        
+        // Audio Recorder State Variables
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let timerInterval = null;
+        let recordStartTime = 0;
+        let recordedBlob = null;
+        let isRecording = false;
+
+        // --- DOM Elements Extraction ---
+        const consentCheckbox = document.getElementById('consent-checkbox');
+        const startInterviewBtn = document.getElementById('start-interview-btn');
+        const consentGate = document.getElementById('consent-gate');
+        const interviewWorkspace = document.getElementById('interview-workspace');
+        const successScreen = document.getElementById('success-screen');
+
+        const questionIndexBadge = document.getElementById('question-index');
+        const questionTextContainer = document.getElementById('question-text');
+        const statusText = document.getElementById('status-text');
+        const statusDot = document.getElementById('status-indicator-dot');
+        
+        const speakBtn = document.getElementById('speak-btn');
+        const recordBtn = document.getElementById('record-btn');
+        const micIcon = document.getElementById('mic-icon');
+        const pulseRing = document.getElementById('pulse-ring');
+        const timerDisplay = document.getElementById('timer');
+        const recordingInstruction = document.getElementById('recording-instruction');
+        
+        const playbackContainer = document.getElementById('playback-container');
+        const audioPlayback = document.getElementById('audio-playback');
+        const reRecordBtn = document.getElementById('re-record-btn');
+        const submitAnswerBtn = document.getElementById('submit-answer-btn');
+
+        // --- Step 1: Consent Gate Input Controls ---
+        consentCheckbox.addEventListener('change', (e) => {
+            startInterviewBtn.disabled = !e.target.checked;
+        });
+
+        startInterviewBtn.addEventListener('click', async () => {
+            consentGate.classList.add('hidden');
+            interviewWorkspace.classList.remove('hidden');
+            await initializeInterviewSession();
+        });
+
+        // --- Step 2: Initialize Session & Fetch Questions from FastAPI Backend ---
+        async function initializeInterviewSession() {
+            updateStatus('loading', 'Fetching Questions...');
+            
+            try {
+                // Connect directly to your FastAPI backend endpoint
+                const response = await fetch('http://localhost:8000/start_interview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ candidate_id: sessionCandidateId })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    interviewQuestions = data.questions || [
+                        "Can you describe a challenging technical data pipeline issue you resolved recently?",
+                        "How do you approach designing a reliable schema for unstructured or semi-structured data matrices?",
+                        "Explain your experience working with multi-agent orchestration architectures or workflows."
+                    ];
+                } else {
+                    throw new Error("Backend connection failed");
+                }
+            } catch (error) {
+                console.warn("Using fallback local screening questions due to offline backend server orchestration.");
+                interviewQuestions = [
+                    "Can you describe a challenging technical data pipeline issue you resolved recently?",
+                    "How do you approach designing a reliable schema for unstructured or semi-structured data matrices?",
+                    "Explain your experience working with multi-agent orchestration architectures or workflows."
+                ];
+            }
+
+            renderCurrentQuestion();
+        }
+
+        // --- Step 3: Render and Display Active Question ---
+        function renderCurrentQuestion() {
+            if (currentQuestionIndex >= interviewQuestions.length) {
+                showSuccessState();
+                return;
+            }
+
+            // Reset UI for the new question
+            questionIndexBadge.textContent = `Question ${currentQuestionIndex + 1} of ${interviewQuestions.length}`;
+            questionTextContainer.textContent = interviewQuestions[currentQuestionIndex];
+            
+            // Clean up old audio records
+            recordedBlob = null;
+            audioChunks = [];
+            audioPlayback.src = '';
+            playbackContainer.classList.add('hidden');
+            
+            // Set buttons back to defaults
+            submitAnswerBtn.disabled = true;
+            reRecordBtn.disabled = true;
+            recordBtn.disabled = false;
+            
+            // Reset visual indicator styling
+            recordBtn.className = "w-20 h-20 sm:w-24 sm:h-24 bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 rounded-full flex items-center justify-center transition shadow-md active:scale-95 focus:outline-none";
+            recordingInstruction.textContent = "Click the red microphone to begin recording your answer.";
+            timerDisplay.textContent = "00:00";
+            timerDisplay.className = "text-xl font-mono font-bold text-gray-500";
+            
+            updateStatus('ready', 'Awaiting Recording');
+        }
+
+        // --- Step 4: Web Speech API (Text-To-Speech Playback) ---
+        speakBtn.addEventListener('click', () => {
+            if ('speechSynthesis' in window) {
+                // Stop any speech that is currently playing
+                window.speechSynthesis.cancel();
+                
+                const utterance = new SpeechSynthesisUtterance(interviewQuestions[currentQuestionIndex]);
+                
+                // Automatically match local languages if needed (supports Arabic or English)
+                utterance.lang = 'en-US'; 
+                utterance.rate = 0.95; // Slightly slower pace for optimal clarity
+                
+                utterance.onstart = () => updateStatus('playing', 'AI Speaking...');
+                utterance.onend = () => updateStatus('ready', 'Awaiting Recording');
+                
+                window.speechSynthesis.speak(utterance);
+            } else {
+                alert("Text-to-Speech playback is not supported inside this browser engine framework.");
+            }
+        });
+
+        // --- Step 5: MediaRecorder API (Microphone Capture Management) ---
+        recordBtn.addEventListener('click', async () => {
+            if (!isRecording) {
+                // Stop text-to-speech immediately if it is speaking
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                await startAudioRecording();
+            } else {
+                stopAudioRecording();
+            }
+        });
+
+        // --- Step 5: MediaRecorder API (Microphone Capture Management) ---
+        recordBtn.addEventListener('click', async () => {
+            if (!isRecording) {
+                // Stop text-to-speech immediately if it is speaking
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                await startAudioRecording();
+            } else {
+                stopAudioRecording();
+            }
+        });
+
+        async function startAudioRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    recordedBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    audioPlayback.src = URL.createObjectURL(recordedBlob);
+                    playbackContainer.classList.remove('hidden');
+                    
+                    // Release microphone stream tracks back to OS control
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                // Begin active capture
+                mediaRecorder.start();
+                isRecording = true;
+                recordStartTime = Date.now();
+                
+                // Update active UI states - Keep the button fully active and clickable
+                pulseRing.classList.remove('hidden');
+                micIcon.innerHTML = `<svg class="w-8 h-8 sm:w-10 sm:h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H10a1 1 0 01-1-1v-4z"></path></svg>`;
+                
+                // Dynamic styles: Red color means active and ready to stop on next click
+                recordBtn.className = "w-20 h-20 sm:w-24 sm:h-24 bg-red-600 text-white rounded-full flex items-center justify-center transition shadow-lg focus:outline-none scale-105 cursor-pointer z-10 relative";
+                recordingInstruction.textContent = "Click the RED button again to STOP recording and save your answer.";
+                timerDisplay.className = "text-xl font-mono font-bold text-red-600 animate-pulse";
+                
+                updateStatus('recording', 'Recording Live');
+                
+                timerInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - recordStartTime) / 1000);
+                    const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                    const secs = String(elapsed % 60).padStart(2, '0');
+                    timerDisplay.textContent = `${mins}:${secs}`;
+                }, 1000);
+
+                submitAnswerBtn.disabled = true;
+                reRecordBtn.disabled = true;
+
+            } catch (err) {
+                console.error("Microphone hardware connection access rejected:", err);
+                alert("Microphone hardware access permissions are required to record screening answers.");
+            }
+        }
+
+        function stopAudioRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                clearInterval(timerInterval);
+                isRecording = false;
+                
+                // Reset visual animations
+                pulseRing.classList.add('hidden');
+                micIcon.innerHTML = `<svg class="w-8 h-8 sm:w-10 sm:h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>`;
+                
+                // Disable record button until they click "Clear & Re-Record" or move to next question
+                recordBtn.className = "w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center cursor-not-allowed";
+                recordBtn.disabled = true;
+                recordingInstruction.textContent = "Audio response processed successfully! Review it below or click submit.";
+                timerDisplay.className = "text-xl font-mono font-bold text-gray-400";
+                
+                // Activate functional options
+                submitAnswerBtn.disabled = false;
+                reRecordBtn.disabled = false;
+                
+                updateStatus('ready', 'Audio Response Locked');
+            }
+        }
+
+        // --- Step 6: Clear & Re-Record Mechanism ---
+        reRecordBtn.addEventListener('click', () => {
+            renderCurrentQuestion();
+        });
+
+        // --- Step 7: Submit Answer (POST to FastAPI Backend Engine) ---
+        submitAnswerBtn.addEventListener('click', async () => {
+            if (!recordedBlob) return;
+
+            updateStatus('loading', 'Uploading Audio Pipeline...');
+            submitAnswerBtn.disabled = true;
+            reRecordBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('audio', recordedBlob, `candidate_${sessionCandidateId}_q_${currentQuestionIndex}.wav`);
+            formData.append('candidate_id', sessionCandidateId);
+            formData.append('question_index', currentQuestionIndex);
+            formData.append('question_text', interviewQuestions[currentQuestionIndex]);
+
+            try {
+                const response = await fetch('http://localhost:8000/upload_answer', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    currentQuestionIndex++;
+                    renderCurrentQuestion();
+                } else {
+                    throw new Error("Server processed upload response with runtime failure exceptions.");
+                }
+            } catch (error) {
+                console.error("Upload routing network exception:", error);
+                alert("Network communication issue sending audio data. Moving to next step for prototyping simulation purposes.");
+                
+                // Fallback simulation processing logic for demo testing
+                currentQuestionIndex++;
+                renderCurrentQuestion();
+            }
+        });
+
+        // --- Step 8: Visual Status Indicator State Switches ---
+        function updateStatus(state, message) {
+            statusText.textContent = message;
+            statusDot.className = "w-2 h-2 rounded-full transition-colors duration-200 ";
+            
+            switch(state) {
+                case 'ready': statusDot.className += "bg-green-500"; break;
+                case 'recording': statusDot.className += "bg-red-500 animate-ping"; break;
+                case 'playing': statusDot.className += "bg-purple-500"; break;
+                case 'loading': statusDot.className += "bg-amber-500 animate-pulse"; break;
+                default: statusDot.className += "bg-gray-400";
+            }
+        }
+
+        function showSuccessState() {
+            interviewWorkspace.classList.add('hidden');
+            successScreen.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

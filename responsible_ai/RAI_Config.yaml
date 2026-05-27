@@ -1,0 +1,30 @@
+# Mowafak Responsible AI (RAI) Configuration Framework
+# Aligned with NYC AEDT & EU AI Act High-Risk AI Requirements
+
+responsible_ai_policy:
+  system_framework: "Mowafak Async AI Pre-Screen"
+  version: "1.0.0"
+
+  core_rules:
+    # 1. Mandatory HR Review: Human-in-the-Loop enforces that AI assists but never decides
+    mandatory_hr_review: true
+
+    # 2. No Auto-Reject: System architecture strictly blocks automated candidate rejection pathways
+    allow_automated_rejection: false
+
+    # 3. Candidate Consent Flow: Mandatory explicit consent required on recording interface before session initialization
+    candidate_consent_flow:
+      required: true
+      block_on_refusal: true
+
+  governance_and_compliance:
+    # 4. Audit Log Signed & Exportable: Signed append-only records with CSV export features for accountability
+    audit_log:
+      append_only: true
+      signing_algorithm: "SHA256"
+      exportable: true
+      export_format: "CSV"
+      pii_masking_enabled: true  # Enforces no PII leakage in application errors or system traces
+
+    # 5. Bias Audit Frequency: Enforces compliance re-evaluation intervals to prevent algorithmic drift
+    bias_audit_cadence: "quarterly"  # Run every 3 months as mandated by compliance policy

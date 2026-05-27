@@ -1,6 +1,7 @@
 import os
 import json
 
+
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -18,6 +19,7 @@ class ResponseEvaluator:
     google_api_key="AIzaSyBbp1uDRoWa3c1pXpfebee3Uu0r3Jeiq84",
     temperature=0
 )
+    
         
 
     def evaluate(
@@ -62,5 +64,7 @@ Do not add explanations.
             content = content.strip()
 
         data = json.loads(content)
+
+        
 
         return ResponseAssessment(**data)

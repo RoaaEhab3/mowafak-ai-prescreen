@@ -1,3 +1,10 @@
 structlog
 pypdf
 google-generativeai
+# Backend / storage (Supabase migration)
+supabase
+fastapi
+uvicorn
+python-multipart
+pydantic-settings
+python-dotenv

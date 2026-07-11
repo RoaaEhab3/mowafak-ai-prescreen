@@ -1,30 +1,35 @@
 """Append-only audit log.
 
-Writes to responsible_ai/audit_log.jsonl (JSONL format).
-Also persists entries to the DB AuditLog table.
+Writes to responsible_ai/audit_log.jsonl (JSONL format) AND persists entries
+to the Supabase `audit_logs` table.
 
 Each entry:
   - timestamp (ISO)
-  - session_id
+  - session_id (nullable — some events fire before a session exists)
   - candidate_id
   - event_type
   - ai_recommendation
   - hr_decision
   - hr_notes_hash (SHA-256 of raw notes — PII never stored raw)
   - metadata (non-PII extra context)
+
+Immutability: this module only ever appends (JSONL) or inserts (DB). It never
+updates or deletes an entry. Harden further with an append-only Postgres
+policy/trigger on the audit_logs table.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy.orm import Session
+from supabase import Client
 
 from src.settings import settings
-from src.models_db import AuditLog as AuditLogORM
+from src.models_db import AuditLog, TABLE_AUDIT_LOGS
 from src.observability import log
 
 
@@ -41,9 +46,9 @@ def _append_jsonl(entry: dict) -> None:
 
 
 def write_audit_entry(
-    db: Session,
+    db: Client,
     *,
-    session_id: str,
+    session_id: str | None,
     candidate_id: str,
     event_type: str,
     ai_recommendation: str | None = None,
@@ -51,7 +56,7 @@ def write_audit_entry(
     hr_notes: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Write an immutable audit entry to both JSONL file and DB."""
+    """Write an immutable audit entry to both the JSONL file and the DB."""
     notes_hash = _sha256(hr_notes) if hr_notes else None
     ts = datetime.now(timezone.utc).isoformat()
 
@@ -69,18 +74,18 @@ def write_audit_entry(
     # 1. Append to JSONL (survives DB loss)
     _append_jsonl(entry)
 
-    # 2. Persist to DB
-    orm_entry = AuditLogORM(
-        session_id=session_id,
-        candidate_id=candidate_id,
+    # 2. Persist to DB (insert only — never update/delete)
+    record = AuditLog(
+        id=str(uuid.uuid4()),
         event_type=event_type,
+        candidate_id=candidate_id,
+        session_id=session_id,
         ai_recommendation=ai_recommendation,
         hr_decision=hr_decision,
         hr_notes_hash=notes_hash,
         metadata_json=metadata or {},
     )
-    db.add(orm_entry)
-    db.commit()
+    db.table(TABLE_AUDIT_LOGS).insert(record.to_row()).execute()
 
     log.info(
         "audit.entry_written",

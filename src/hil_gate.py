@@ -3,18 +3,25 @@
 Enforces that NO candidate-facing decision is ever made automatically.
 The architecture itself makes auto-rejection structurally impossible:
 
-  - FinalReport.hr_decision starts as NULL
+  - final_reports.hr_decision starts as NULL
   - Candidates cannot receive a decision until HR explicitly acts
   - This module validates HR decisions before persisting them
   - Any attempt to bypass the gate raises HILViolationError
+
+Persistence uses supabase-py (PostgREST), not SQLAlchemy.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
+from supabase import Client
 
-from src.models_db import FinalReport, InterviewSession
+from src.models_db import (
+    FinalReport,
+    InterviewSession,
+    TABLE_SESSIONS,
+    TABLE_FINAL_REPORTS,
+)
 from src.audit_log import write_audit_entry
 from src.observability import log
 
@@ -27,7 +34,7 @@ class HILViolationError(RuntimeError):
 
 
 def require_hr_decision(
-    db: Session,
+    db: Client,
     *,
     session_id: str,
     hr_decision: str,
@@ -43,7 +50,7 @@ def require_hr_decision(
       - HR decision cannot be overwritten once set (append-only)
       - Every decision is audit-logged immediately
 
-    Returns the updated FinalReport.
+    Returns the updated FinalReport row-shape.
     """
     if hr_decision not in VALID_HR_DECISIONS:
         raise ValueError(
@@ -57,20 +64,30 @@ def require_hr_decision(
     if not hr_notes or not hr_notes.strip():
         raise HILViolationError("hr_notes are required — undocumented decisions are not allowed.")
 
-    session: InterviewSession | None = (
-        db.query(InterviewSession).filter_by(id=session_id).first()
+    sres = (
+        db.table(TABLE_SESSIONS)
+        .select("*")
+        .eq("id", session_id)
+        .limit(1)
+        .execute()
     )
-    if session is None:
+    if not sres.data:
         raise ValueError(f"InterviewSession {session_id!r} not found.")
+    session = InterviewSession.from_row(sres.data[0])
 
-    report: FinalReport | None = (
-        db.query(FinalReport).filter_by(session_id=session_id).first()
+    rres = (
+        db.table(TABLE_FINAL_REPORTS)
+        .select("*")
+        .eq("session_id", session_id)
+        .limit(1)
+        .execute()
     )
-    if report is None:
+    if not rres.data:
         raise HILViolationError(
             f"No FinalReport exists for session {session_id!r}. "
             "AI must complete its evaluation before HR can decide."
         )
+    report = FinalReport.from_row(rres.data[0])
 
     if report.hr_decision is not None:
         raise HILViolationError(
@@ -78,15 +95,25 @@ def require_hr_decision(
             "Decisions are immutable."
         )
 
-    # Persist HR decision
+    # Persist HR decision (single-row update keyed by report id)
+    decided_at = datetime.now(timezone.utc)
     report.hr_decision = hr_decision
     report.hr_notes = hr_notes
     report.hr_reviewer_id = hr_reviewer_id
-    report.hr_decided_at = datetime.now(timezone.utc)
+    report.hr_decided_at = decided_at
 
-    session.status = "decided"
-    db.commit()
-    db.refresh(report)
+    db.table(TABLE_FINAL_REPORTS).update(
+        {
+            "hr_decision": hr_decision,
+            "hr_notes": hr_notes,
+            "hr_reviewer_id": hr_reviewer_id,
+            "hr_decided_at": decided_at.isoformat(),
+        }
+    ).eq("id", report.id).execute()
+
+    db.table(TABLE_SESSIONS).update({"status": "decided"}).eq(
+        "id", session_id
+    ).execute()
 
     # Audit log
     write_audit_entry(

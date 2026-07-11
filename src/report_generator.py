@@ -9,23 +9,45 @@ Recommendation scale:
   strong_no   | overall <  2.0
 
 Every recommendation must include transcript evidence (enforced by prompt).
+
+Persistence uses supabase-py (PostgREST). The SQLAlchemy relationship
+traversal (session.questions / question.answers / answer.assessment) is
+replaced with explicit table queries joined in Python by id.
 """
 from __future__ import annotations
 
 import json
 import re
+import uuid
 from datetime import datetime, timezone
 
 import google.generativeai as genai
-from sqlalchemy.orm import Session
+from supabase import Client
 
 from src.settings import settings
 from src.prompts import REPORT_DRAFTER_SYSTEM, REPORT_DRAFTER_USER
-from src.models_db import InterviewSession, Question, Answer, Assessment, FinalReport, Candidate
+from src.models_db import (
+    Candidate,
+    InterviewSession,
+    Question,
+    Answer,
+    Assessment,
+    FinalReport,
+    TABLE_CANDIDATES,
+    TABLE_SESSIONS,
+    TABLE_QUESTIONS,
+    TABLE_ANSWERS,
+    TABLE_ASSESSMENTS,
+    TABLE_FINAL_REPORTS,
+)
 from src.audit_log import write_audit_entry
 from src.observability import log
 
 genai.configure(api_key=settings.gemini_api_key)
+
+
+def _uuid() -> str:
+    return str(uuid.uuid4())
 
 
 def _recommendation_from_score(score: float) -> str:
@@ -38,7 +60,19 @@ def _recommendation_from_score(score: float) -> str:
     return "strong_no"
 
 
-def generate_report(db: Session, session_id: str) -> FinalReport:
+def _persist_report(db: Client, report: FinalReport, session_id: str) -> FinalReport:
+    """Insert the report and advance the session to awaiting_hr."""
+    db.table(TABLE_FINAL_REPORTS).insert(report.to_row()).execute()
+    db.table(TABLE_SESSIONS).update(
+        {
+            "status": "awaiting_hr",
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", session_id).execute()
+    return report
+
+
+def generate_report(db: Client, session_id: str) -> FinalReport:
     """
     Build and persist a FinalReport for a completed InterviewSession.
 
@@ -49,38 +83,75 @@ def generate_report(db: Session, session_id: str) -> FinalReport:
       4. Write audit log entry
       5. Advance session status to awaiting_hr
     """
-    session: InterviewSession | None = (
-        db.query(InterviewSession).filter_by(id=session_id).first()
+    sres = (
+        db.table(TABLE_SESSIONS)
+        .select("*")
+        .eq("id", session_id)
+        .limit(1)
+        .execute()
     )
-    if session is None:
+    if not sres.data:
         raise ValueError(f"InterviewSession {session_id!r} not found.")
+    session = InterviewSession.from_row(sres.data[0])
 
-    candidate: Candidate = session.candidate
+    cres = (
+        db.table(TABLE_CANDIDATES)
+        .select("*")
+        .eq("id", session.candidate_id)
+        .limit(1)
+        .execute()
+    )
+    candidate = Candidate.from_row(cres.data[0]) if cres.data else None
 
-    # Collect all assessments
+    # Load questions + answers + assessments for the session and join in Python.
+    q_rows = (
+        db.table(TABLE_QUESTIONS).select("*").eq("session_id", session_id).execute()
+    )
+    questions = {r["id"]: Question.from_row(r) for r in (q_rows.data or [])}
+
+    a_rows = (
+        db.table(TABLE_ANSWERS).select("*").eq("session_id", session_id).execute()
+    )
+    answers = [Answer.from_row(r) for r in (a_rows.data or [])]
+
+    answer_ids = [a.id for a in answers]
+    assessments_by_answer: dict[str, Assessment] = {}
+    if answer_ids:
+        asmt_rows = (
+            db.table(TABLE_ASSESSMENTS)
+            .select("*")
+            .in_("answer_id", answer_ids)
+            .execute()
+        )
+        for r in (asmt_rows.data or []):
+            a = Assessment.from_row(r)
+            assessments_by_answer[a.answer_id] = a
+
     assessments_data = []
-    for question in session.questions:
-        for answer in question.answers:
-            if answer.assessment:
-                a = answer.assessment
-                assessments_data.append(
-                    {
-                        "question": question.question_text,
-                        "skill_targeted": question.skill_targeted,
-                        "transcript_snippet": (answer.transcript or "")[:500],
-                        "relevance_score": a.relevance_score,
-                        "clarity_score": a.clarity_score,
-                        "technical_depth_score": a.technical_depth_score,
-                        "average_score": a.average_score,
-                        "evidence_from_transcript": a.evidence_from_transcript,
-                        "concerns": a.concerns,
-                    }
-                )
+    for answer in answers:
+        a = assessments_by_answer.get(answer.id)
+        if a is None:
+            continue
+        question = questions.get(answer.question_id)
+        assessments_data.append(
+            {
+                "question": question.question_text if question else "",
+                "skill_targeted": question.skill_targeted if question else None,
+                "transcript_snippet": (answer.transcript or "")[:500],
+                "relevance_score": a.relevance_score,
+                "clarity_score": a.clarity_score,
+                "technical_depth_score": a.technical_depth_score,
+                "average_score": a.average_score,
+                "evidence_from_transcript": a.evidence_from_transcript,
+                "concerns": a.concerns,
+            }
+        )
 
     if not assessments_data:
         log.warning("report_gen.no_assessments", session_id=session_id)
         # Return a minimal report so HR still needs to decide
         report = FinalReport(
+            id=_uuid(),
             session_id=session_id,
             overall_score=1.0,
             ai_recommendation="weak_no",
@@ -89,18 +160,17 @@ def generate_report(db: Session, session_id: str) -> FinalReport:
             strengths=[],
             areas_for_development=["No voice answers received; cannot evaluate."],
         )
-        db.add(report)
-        session.status = "awaiting_hr"
-        db.commit()
-        db.refresh(report)
-        return report
+        return _persist_report(db, report, session_id)
 
     # Build skills matrix from parsed CV
-    skills_matrix = (candidate.parsed_cv_json or {}).get("skills_matrix", {})
+    skills_matrix = (
+        (candidate.parsed_cv_json if candidate else {}) or {}
+    ).get("skills_matrix", {})
+    candidate_id = candidate.id if candidate else session.candidate_id
     role = session.role or "Unspecified Role"
 
     prompt = REPORT_DRAFTER_USER.format(
-        candidate_id=candidate.id,
+        candidate_id=candidate_id,
         role=role,
         assessments_json=json.dumps(assessments_data, indent=2),
         skills_matrix=json.dumps(skills_matrix, indent=2),
@@ -122,6 +192,7 @@ def generate_report(db: Session, session_id: str) -> FinalReport:
         )
 
         report = FinalReport(
+            id=_uuid(),
             session_id=session_id,
             overall_score=overall_score,
             ai_recommendation=ai_recommendation,
@@ -132,12 +203,9 @@ def generate_report(db: Session, session_id: str) -> FinalReport:
         )
     except Exception as exc:
         log.error("report_gen.parse_failed", session_id=session_id, error=str(exc))
-        avg = (
-            sum(a["average_score"] for a in assessments_data) / len(assessments_data)
-            if assessments_data
-            else 1.0
-        )
+        avg = sum(a["average_score"] for a in assessments_data) / len(assessments_data)
         report = FinalReport(
+            id=_uuid(),
             session_id=session_id,
             overall_score=round(avg, 2),
             ai_recommendation=_recommendation_from_score(avg),
@@ -147,16 +215,12 @@ def generate_report(db: Session, session_id: str) -> FinalReport:
             areas_for_development=["Automated report failed — manual review required."],
         )
 
-    db.add(report)
-    session.status = "awaiting_hr"
-    session.completed_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(report)
+    _persist_report(db, report, session_id)
 
     write_audit_entry(
         db,
         session_id=session_id,
-        candidate_id=candidate.id,
+        candidate_id=candidate_id,
         event_type="report_generated",
         ai_recommendation=report.ai_recommendation,
         metadata={

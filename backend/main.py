@@ -62,16 +62,20 @@ from src.orchestrator import ingest_cv, start_interview, process_answer, finaliz
 from src.hil_gate import require_hr_decision, HILViolationError
 from src.observability import log, new_trace
 
-# NOTE ON MIGRATION SCOPE:
-# orchestrator.py and hil_gate.py were not available at the time this file
-# was migrated to supabase-py. They still receive `db` positionally and,
-# per their previous SQLAlchemy-era signatures, likely call `db.query(...)`,
-# `db.add(...)`, `db.commit()`, etc. — none of which exist on a
-# supabase-py Client. Those two files MUST be migrated to
-# `db.table(...).select()/.insert()/.update()` calls before this backend
-# will actually run end to end. Only main.py's own direct DB access
-# (get_report, the start_interview fallback query, and /health) has been
-# converted here.
+# MIGRATION STATUS:
+# The full DB layer now runs on supabase-py. orchestrator.py, hil_gate.py,
+# audit_log.py, and report_generator.py have all been ported off SQLAlchemy to
+# `db.table(...).select()/.insert()/.update()/.upsert()` calls, and the
+# canonical row shapes live in src/models_db.py (dataclasses with
+# from_row/to_row). The Supabase schema is in backend/schema.sql — apply it via
+# the Supabase SQL editor or `supabase db push` before first run.
+#
+# Still open (separate work, not part of the DB migration):
+#   - orchestrator.py imports the AI modules src.agents.question_generator,
+#     src.agents.response_evaluator, and src.whisper_stt, which are not yet on
+#     main — the server won't boot end-to-end until those land.
+#   - No auth on /hr_decision: hr_reviewer_id is still self-reported (see the
+#     TODO on that endpoint).
 
 # ── App ───────────────────────────────────────────────────────────────────────
 

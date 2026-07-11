@@ -8,3 +8,6 @@ uvicorn
 python-multipart
 pydantic-settings
 python-dotenv
+# AI modules (STT + evaluation)
+openai-whisper
+deepeval

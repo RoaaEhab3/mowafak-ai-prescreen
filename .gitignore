@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Secrets / local config
+.env
+
+# Local data & artifacts
+*.db
+data/*.db
+uploads/
+
+# Audio samples / recordings (keep the repo binary-free)
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.webm

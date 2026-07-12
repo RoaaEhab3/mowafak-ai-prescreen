@@ -1,0 +1,23 @@
+# Shared base — libraries common to both the app runtime and the dev/eval env.
+#
+# Deliberately excludes the two packages that must NOT be co-installed
+# (chainlit and deepeval each pull a large, independently-versioned
+# OpenTelemetry stack — that pairing is the main resolver-conflict trigger)
+# and the heavy STT stack (torch/numba). Those live in:
+#   requirements.txt        (base + chainlit)     -> the app / HR UI
+#   requirements-dev.txt    (base + deepeval)     -> tests / eval
+#   requirements-stt.txt    (openai-whisper)      -> speech-to-text add-on
+#
+# You normally don't install this file directly — install requirements.txt or
+# requirements-dev.txt, which each pull it in via `-r`.
+
+structlog
+pypdf
+google-generativeai
+supabase
+fastapi
+uvicorn
+python-multipart
+pydantic>=2
+pydantic-settings
+python-dotenv

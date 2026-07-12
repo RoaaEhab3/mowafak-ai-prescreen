@@ -13,7 +13,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import whisper
+# NOTE: `import whisper` is deliberately deferred to WhisperSTT.__init__ rather
+# than done at module top-level. openai-whisper pulls torch + numba (a heavy,
+# Python-version-sensitive stack shipped in requirements-stt.txt, not the core
+# requirements). Importing it lazily means the FastAPI backend and Chainlit HR
+# UI can import this module (via the orchestrator) without those packages
+# installed — Whisper is only required on the machine that actually transcribes
+# audio, at the moment a WhisperSTT is instantiated.
 
 # Optional: prepend a custom ffmpeg bin directory if provided.
 _ffmpeg_bin = os.environ.get("FFMPEG_BIN")
@@ -23,6 +29,8 @@ if _ffmpeg_bin:
 
 class WhisperSTT:
     def __init__(self, model_name: str = "base"):
+        import whisper  # deferred heavy import (torch/numba) — see module note
+
         self.model = whisper.load_model(model_name)
 
     def transcribe_audio(self, audio_path: str) -> dict:

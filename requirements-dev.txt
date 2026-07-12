@@ -1,0 +1,17 @@
+# Dev / evaluation — NOT needed to run the app.
+#
+# = shared base (requirements-base.txt) + DeepEval + pytest. Used by
+# tests/test_evaluator.py (Faithfulness + the custom HiLRespect GEval) and
+# responsible_ai/bias_audit.py.
+#
+# Note: this intentionally does NOT pull in chainlit. The dev/test code never
+# imports it (chainlit is used only by app.py), and keeping chainlit and
+# deepeval out of the same environment is what avoids the OpenTelemetry
+# resolver conflict.
+#
+# Install:  pip install -r requirements-dev.txt
+
+-r requirements-base.txt
+deepeval
+pytest
+pytest-xdist

@@ -1,0 +1,14 @@
+# Speech-to-text (batch Whisper) — OPTIONAL, heavy add-on.
+#
+# openai-whisper pulls torch + numba + llvmlite, a large and
+# Python-version-sensitive stack. Install this ONLY on the machine that
+# actually transcribes audio (the one serving /upload_answer). The rest of the
+# app imports src.whisper_stt lazily, so the API/UI run fine without it.
+#
+# Requires ffmpeg on PATH (or set the FFMPEG_BIN env var to its bin directory).
+# torch/numba wheels lag on the newest Python — use Python 3.11 or 3.12.
+#
+# Install on top of the app runtime:
+#   pip install -r requirements.txt -r requirements-stt.txt
+
+openai-whisper

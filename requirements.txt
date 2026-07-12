@@ -1,13 +1,17 @@
-structlog
-pypdf
-google-generativeai
-# Backend / storage (Supabase migration)
-supabase
-fastapi
-uvicorn
-python-multipart
-pydantic-settings
-python-dotenv
-# AI modules (STT + evaluation)
-openai-whisper
-deepeval
+# App runtime — FastAPI backend + Chainlit HR UI + Supabase + Gemini.
+#
+# This is everything needed to RUN the app:
+#   uvicorn backend.main:app --reload      # the API
+#   chainlit run app.py                    # the HR review UI
+#
+# = shared base (requirements-base.txt) + Chainlit (the UI layer).
+# It does NOT include speech-to-text (torch/whisper) or the eval/test stack;
+# see requirements-stt.txt and requirements-dev.txt. chainlit is kept out of
+# the dev env on purpose — chainlit + deepeval in one environment is the main
+# source of the dependency conflicts.
+#
+# Recommended interpreter: Python 3.11 or 3.12.
+# Install:  pip install -r requirements.txt
+
+-r requirements-base.txt
+chainlit

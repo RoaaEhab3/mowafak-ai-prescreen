@@ -14,9 +14,9 @@ import google.generativeai as genai
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
-from settings import settings
-from observability import log
-from prompts import PARSE_PROMPT
+from src.settings import settings
+from src.observability import log
+from src.prompts import PARSE_PROMPT
 
 genai.configure(api_key=settings.gemini_api_key)
 
@@ -61,6 +61,24 @@ def extract_text_from_file(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _clean_gemini_json(text: str) -> str:
+    """Remove markdown fences and extract the JSON object safely.
+
+    Strips ```json fences, then falls back to slicing from the first "{" to
+    the last "}" so stray prose before/after the object doesn't break
+    json.loads.
+    """
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+
+    # Fallback: extract the first complete JSON object.
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start != -1 and end > start:
+        text = text[start:end]
+
+    return text.strip()
 
 
 def parse_cv(file_path: Path | str, candidate_id: str) -> ParsedCV:
@@ -75,14 +93,10 @@ def parse_cv(file_path: Path | str, candidate_id: str) -> ParsedCV:
 
     model = genai.GenerativeModel(settings.gemini_model)
     response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
-    text = response.text.strip()
-
-    # Strip markdown fences if model ignores instructions
-    text = re.sub(r"^```[a-z]*\n?", "", text)
-    text = re.sub(r"\n?```$", "", text)
+    cleaned = _clean_gemini_json(response.text)
 
     try:
-        data = json.loads(text)
+        data = json.loads(cleaned)
         parsed = ParsedCV(candidate_id=candidate_id, **data)
         log.info("cv_parse.success", candidate_id=candidate_id,
                  skills_count=len(parsed.raw_skills))
@@ -99,11 +113,10 @@ def parse_cv_from_text(raw_text: str, candidate_id: str) -> ParsedCV:
 
     model = genai.GenerativeModel(settings.gemini_model)
     response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
-    text = re.sub(r"^```[a-z]*\n?", "", response.text.strip())
-    text = re.sub(r"\n?```$", "", text)
+    cleaned = _clean_gemini_json(response.text)
 
     try:
-        data = json.loads(text)
+        data = json.loads(cleaned)
         return ParsedCV(candidate_id=candidate_id, **data)
     except Exception as exc:
         log.error("cv_parse_text.failed", candidate_id=candidate_id, error=str(exc))

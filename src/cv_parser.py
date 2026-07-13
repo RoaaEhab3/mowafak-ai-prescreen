@@ -10,15 +10,22 @@ import re
 from pathlib import Path
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai.types import GenerateContentResponse
+
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
-from .settings import settings
+
 from .observability import log
 from .prompts import PARSE_PROMPT
 
-genai.configure(api_key=settings.gemini_api_key)
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
@@ -86,8 +93,20 @@ def parse_cv(file_path: Path | str, candidate_id: str) -> ParsedCV:
         log.warning("cv_parse.empty_text", candidate_id=candidate_id)
         return ParsedCV(candidate_id=candidate_id)
 
-    model = genai.GenerativeModel(settings.gemini_model)
-    response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
+    # model = client.models.generate_content(
+    #         model=os.getenv("GOOGLE_API_MODEL", "gemini-2.5-flash")
+    # )
+    # print(f"Using model: {os.getenv('GOOGLE_API_MODEL')}")
+    # response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
+
+    response: GenerateContentResponse = client.models.generate_content(
+            model=os.getenv("GOOGLE_API_MODEL", "gemini-2.5-flash"),
+            contents=PARSE_PROMPT.format(cv_text=raw_text[:8000]),
+            config={
+                "system_instruction": PARSE_PROMPT,
+                "temperature": 0.7,
+            }
+        )
     cleaned = _clean_gemini_json(response.text)
 
     try:
@@ -106,8 +125,20 @@ def parse_cv_from_text(raw_text: str, candidate_id: str) -> ParsedCV:
     """Parse a CV from a raw text string (e.g. already extracted)."""
     log.info("cv_parse_text.start", candidate_id=candidate_id)
 
-    model = genai.GenerativeModel(settings.gemini_model)
-    response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
+    # model = client.models.generate_content(
+    #         model=os.getenv("GOOGLE_API_MODEL", "gemini-2.5-flash")
+    # )
+    # response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
+
+    response: GenerateContentResponse = client.models.generate_content(
+            model=os.getenv("GOOGLE_API_MODEL", "gemini-2.5-flash"),
+            contents=PARSE_PROMPT.format(cv_text=raw_text[:8000]),
+            config={
+                "system_instruction": PARSE_PROMPT,
+                "temperature": 0.7,
+            }
+        )
+
     cleaned = _clean_gemini_json(response.text)
 
     try:
@@ -116,3 +147,4 @@ def parse_cv_from_text(raw_text: str, candidate_id: str) -> ParsedCV:
     except Exception as exc:
         log.error("cv_parse_text.failed", candidate_id=candidate_id, error=str(exc))
         return ParsedCV(candidate_id=candidate_id)
+

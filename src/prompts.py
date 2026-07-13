@@ -34,28 +34,27 @@ Generate exactly {n_questions} interview questions as a JSON array of objects wi
 Return ONLY the JSON array.
 """
 
-RESPONSE_EVALUATOR_SYSTEM = """You are a fair, structured interview assessor.
-Given a candidate's transcript answer, the original question, and the skills matrix,
-produce a ResponseAssessment. Be evidence-based: every score MUST be supported by a 
-verbatim quote from the transcript. If you cannot find supporting evidence, score 1.
-Return ONLY valid JSON — no markdown fences, no extra text."""
+RESPONSE_EVALUATOR_SYSTEM = """You are an expert technical interviewer.
 
-RESPONSE_EVALUATOR_USER = """
-Question: {question}
-Skill Targeted: {skill_targeted}
-Skills Matrix: {skills_matrix}
+Question:
+{question}
 
-Candidate Transcript:
-\"\"\"{transcript}\"\"\"
+Candidate Answer:
+{transcript}
 
-Return a JSON object with keys:
-  - relevance_score (integer 1-5)
-  - clarity_score (integer 1-5)
-  - technical_depth_score (integer 1-5)
-  - evidence_from_transcript (string — must be a direct quote from the transcript above)
-  - concerns (array of strings, may be empty)
+Target Skills: {', '.join(skills) if skills else 'None specified'}
 
-Return ONLY the JSON object.
+Evaluate the response and return **ONLY** valid JSON in this exact format (no explanations, no markdown):
+
+{{
+    "relevance_score": 4,
+    "clarity_score": 5,
+    "technical_depth_score": 3,
+    "evidence_from_transcript": "Brief quote or summary from the answer that supports the scores",
+    "concerns": ["List any red flags or weaknesses here"]
+}}
+
+Scores must be integers between 1 and 5.
 """
 
 REPORT_DRAFTER_SYSTEM = """You are an HR report writer summarising an AI-assisted 

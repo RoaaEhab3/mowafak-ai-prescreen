@@ -137,7 +137,9 @@
         // Point this at your FastAPI backend. Change when deploying off localhost.
         const API_BASE = 'http://localhost:8000';
         // Name of the interview page this hands off to — adjust if you rename/relocate it.
-        const INTERVIEW_PAGE = 'candidate_app-record.html';
+        // Sibling file in candidate_app/ — the old value ('candidate_app-record.html')
+        // resolved to candidate_app/candidate_app-record.html and 404'd.
+        const INTERVIEW_PAGE = 'record.html';
 
         const uploadStage = document.getElementById('upload-stage');
         const successStage = document.getElementById('success-stage');

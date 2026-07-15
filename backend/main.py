@@ -23,22 +23,45 @@ CHANGELOG (review fixes applied — see accompanying review notes):
   - A single trace id is created per request and threaded through all log
     calls for that request.
 
+  Integration-completion pass (this changeset):
+  - Uploaded CV/audio files are now deleted from disk once ingest_cv() /
+    process_answer() have consumed them (success or failure), instead of
+    accumulating indefinitely in uploads/cvs/ and uploads/audio/. Those
+    files hold raw candidate PII (a resume, a voice recording) and were
+    only ever needed transiently for parsing/transcription — the
+    structured results already live in the DB.
+  - hr_decision is now a Literal["approved", "rejected", "hold"] instead of
+    a bare `str`, so FastAPI/pydantic rejects invalid values at the API
+    boundary (a 422) instead of forwarding an arbitrary string into
+    hil_gate.require_hr_decision().
+  - Added a minimal, verifiable session-state guard: /upload_answer and
+    /finalize now reject (409) if the session has already reached
+    "awaiting_hr" (i.e. finalize_session() already ran), which is the one
+    status transition confirmed by report_generator.py's persistence step.
+    This is a partial mitigation only — see the "Still NOT implemented"
+    note below for what remains blocked pending orchestrator.py/hil_gate.py.
+  - Removed the unused `shutil` import (no call sites use it; all file I/O
+    here goes through UploadFile.read()/Path.unlink()).
+
   Still NOT implemented here (needs decisions from other files / infra,
   flagged with TODO):
   - Authentication/authorization. There is currently no verification that
     the caller of /hr_decision is actually the HR reviewer named in the
     request body. This MUST be added before production use.
-  - Session state-machine guards (e.g. rejecting /upload_answer after a
-    session has been finalized). Depends on what orchestrator.py already
-    enforces — revisit once that file is reviewed.
+  - Full session state-machine guards beyond the single "already
+    finalized" check added above (e.g. rejecting /upload_answer before a
+    session has questions, or after HR has already decided). The complete
+    state vocabulary is owned by orchestrator.py / hil_gate.py, which are
+    not available to this changeset — revisit once those files are
+    reviewed.
 """
 from __future__ import annotations
 
 import os
-import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,6 +135,12 @@ MAX_CV_BYTES = 10 * 1024 * 1024        # 10 MB
 MAX_AUDIO_BYTES = 50 * 1024 * 1024     # 50 MB
 ALLOWED_AUDIO_EXT = {".wav", ".mp3", ".m4a", ".ogg", ".webm"}
 
+# The one session status literal we can verify from report_generator.py's
+# `_persist_report()`, which sets the session to this status once a
+# FinalReport has been written. Used below for a minimal, safe "don't
+# process a session twice" guard — NOT a full state machine.
+SESSION_STATUS_AWAITING_HR = "awaiting_hr"
+
 
 @app.on_event("startup")
 async def startup() -> None:
@@ -172,7 +201,10 @@ class ReportResponse(BaseModel):
 
 class HRDecisionRequest(BaseModel):
     session_id: str
-    hr_decision: str          # approved | rejected | hold
+    # Tightened from `str` to a closed set of allowed values: FastAPI/pydantic
+    # now rejects anything else with a 422 at the API boundary, instead of
+    # letting an arbitrary string reach hil_gate.require_hr_decision().
+    hr_decision: Literal["approved", "rejected", "hold"]
     hr_reviewer_id: str
     hr_notes: str
 
@@ -226,6 +258,21 @@ def _save_upload(file: UploadFile, dest: Path, max_bytes: int) -> int:
     finally:
         file.file.close()
     return written
+
+
+def _session_status(db: Client, session_id: str) -> str | None:
+    """Fetch just the `status` column for a session, or None if not found.
+
+    Small helper used by the partial state-machine guard below. Kept
+    intentionally minimal (one column, no full row hydration) since it's
+    only used for a pre-flight check, not to construct an InterviewSession.
+    """
+    result = (
+        db.table(TABLE_SESSIONS).select("status").eq("id", session_id).limit(1).execute()
+    )
+    if not result.data:
+        return None
+    return result.data[0].get("status")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -288,6 +335,12 @@ def upload_cv(
         )
     except Exception as exc:
         _fail(trace_id, "api.upload_cv.failed", exc, "CV parsing failed.")
+    finally:
+        # The raw PDF is only needed transiently for Gemini parsing; once
+        # ingest_cv() has extracted structured data into the DB (or failed),
+        # remove it from disk so uploads/cvs/ doesn't accumulate raw
+        # candidate documents indefinitely.
+        dest.unlink(missing_ok=True)
 
     return UploadCVResponse(
         candidate_id=candidate_id,
@@ -378,6 +431,19 @@ def upload_answer(
     """
     trace_id = new_trace()
 
+    # Partial session-state guard: refuse new answers once the session has
+    # already been finalized (report generated, HR review pending/underway).
+    # This only checks the one status value we can verify
+    # (SESSION_STATUS_AWAITING_HR, set by report_generator._persist_report);
+    # a full state machine (e.g. rejecting uploads before /start_interview)
+    # depends on orchestrator.py, which isn't available to this changeset.
+    existing_status = _session_status(db, session_id)
+    if existing_status == SESSION_STATUS_AWAITING_HR:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session has already been finalized; no further answers can be uploaded.",
+        )
+
     suffix = Path(file.filename or "audio.wav").suffix.lower()
     if suffix not in ALLOWED_AUDIO_EXT:
         raise HTTPException(
@@ -404,6 +470,12 @@ def upload_answer(
               "Answer processing failed due to a missing resource.")
     except Exception as exc:
         _fail(trace_id, "api.upload_answer.failed", exc, "Answer processing failed.")
+    finally:
+        # Raw audio is only needed transiently for Whisper transcription;
+        # once process_answer() has produced (or failed to produce) a
+        # transcript, delete it so uploads/audio/ doesn't retain raw voice
+        # recordings.
+        dest.unlink(missing_ok=True)
 
     return AnswerUploadResponse(
         answer_id=answer.id,
@@ -421,6 +493,15 @@ def finalize_session_endpoint(session_id: str, db: Client = Depends(get_db)):
     Advances session to awaiting_hr status.
     """
     trace_id = new_trace()
+
+    # Same minimal guard as /upload_answer: don't regenerate a report for a
+    # session that's already been finalized.
+    existing_status = _session_status(db, session_id)
+    if existing_status == SESSION_STATUS_AWAITING_HR:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session has already been finalized.",
+        )
 
     try:
         report = finalize_session(db, session_id=session_id)

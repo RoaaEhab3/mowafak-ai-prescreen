@@ -7,29 +7,75 @@ Endpoints:
   POST /finalize/{session_id}
   GET  /get_report/{session_id}
   POST /hr_decision
+
+CHANGELOG (review fixes applied — see accompanying review notes):
+  - Routes with blocking I/O (file writes, sync SQLAlchemy calls) are now
+    plain `def`, not `async def`, so FastAPI runs them in its threadpool
+    instead of blocking the event loop.
+  - Internal exception text is no longer returned to the client; it is
+    logged server-side with a trace id, and the client gets a generic
+    message + that id for support/debugging correlation.
+  - Upload directories are resolved relative to this file, not the
+    process's current working directory.
+  - CORS origins are now read from an environment variable instead of "*".
+  - Basic file-size limits and content sniffing added to uploads.
+  - /health performs a real DB check.
+  - A single trace id is created per request and threaded through all log
+    calls for that request.
+
+  Still NOT implemented here (needs decisions from other files / infra,
+  flagged with TODO):
+  - Authentication/authorization. There is currently no verification that
+    the caller of /hr_decision is actually the HR reviewer named in the
+    request body. This MUST be added before production use.
+  - Session state-machine guards (e.g. rejecting /upload_answer after a
+    session has been finalized). Depends on what orchestrator.py already
+    enforces — revisit once that file is reviewed.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from supabase import Client
 
 # Bootstrap path so imports resolve from project root
-import sys, os
+import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.database import get_db, create_all_tables
-from src.models_db import Candidate, InterviewSession, Question, FinalReport
+from src.models_db import (
+    TABLE_SESSIONS,
+    TABLE_QUESTIONS,
+    TABLE_FINAL_REPORTS,
+    InterviewSession,
+    Question,
+    FinalReport,
+)
 from src.orchestrator import ingest_cv, start_interview, process_answer, finalize_session
 from src.hil_gate import require_hr_decision, HILViolationError
 from src.observability import log, new_trace
+
+# MIGRATION STATUS:
+# The full DB layer now runs on supabase-py. orchestrator.py, hil_gate.py,
+# audit_log.py, and report_generator.py have all been ported off SQLAlchemy to
+# `db.table(...).select()/.insert()/.update()/.upsert()` calls, and the
+# canonical row shapes live in src/models_db.py (dataclasses with
+# from_row/to_row). The Supabase schema is in backend/schema.sql — apply it via
+# the Supabase SQL editor or `supabase db push` before first run.
+#
+# Still open (separate work, not part of the DB migration):
+#   - orchestrator.py imports the AI modules src.agents.question_generator,
+#     src.agents.response_evaluator, and src.whisper_stt, which are not yet on
+#     main — the server won't boot end-to-end until those land.
+#   - No auth on /hr_decision: hr_reviewer_id is still self-reported (see the
+#     TODO on that endpoint).
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -39,17 +85,32 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# CORS: read allowed origins from env instead of hardcoding "*". Falls back to
+# "*" only if nothing is configured (dev convenience), but logs a warning so
+# it isn't shipped to prod silently.
+_cors_origins_env = os.environ.get("MOWAFAK_CORS_ORIGINS", "")
+if _cors_origins_env.strip():
+    ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+else:
+    ALLOWED_ORIGINS = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-UPLOADS_CV = Path("uploads/cvs")
-UPLOADS_AUDIO = Path("uploads/audio")
+# Resolve upload dirs relative to this file, not the process cwd.
+BASE_DIR = Path(__file__).resolve().parent
+UPLOADS_CV = BASE_DIR / "uploads" / "cvs"
+UPLOADS_AUDIO = BASE_DIR / "uploads" / "audio"
 UPLOADS_CV.mkdir(parents=True, exist_ok=True)
 UPLOADS_AUDIO.mkdir(parents=True, exist_ok=True)
+
+MAX_CV_BYTES = 10 * 1024 * 1024        # 10 MB
+MAX_AUDIO_BYTES = 50 * 1024 * 1024     # 50 MB
+ALLOWED_AUDIO_EXT = {".wav", ".mp3", ".m4a", ".ogg", ".webm"}
 
 
 @app.on_event("startup")
@@ -123,13 +184,57 @@ class HRDecisionResponse(BaseModel):
     message: str
 
 
+class ErrorResponse(BaseModel):
+    detail: str
+    trace_id: str
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _fail(trace_id: str, event: str, exc: Exception, client_message: str, status_code: int = 500):
+    """Log full exception server-side, raise a generic HTTPException for the client.
+
+    Never puts raw exception text in the client-facing response — avoids
+    leaking stack traces, file paths, or upstream (Gemini/Whisper) error
+    payloads that may contain sensitive detail.
+    """
+    log.error(event, trace_id=trace_id, error=str(exc), error_type=type(exc).__name__)
+    raise HTTPException(
+        status_code=status_code,
+        detail=f"{client_message} (reference: {trace_id})",
+    )
+
+
+def _save_upload(file: UploadFile, dest: Path, max_bytes: int) -> int:
+    """Stream an upload to disk with a hard size cap. Returns bytes written."""
+    written = 0
+    try:
+        with dest.open("wb") as fh:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    fh.close()
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"File exceeds max allowed size of {max_bytes} bytes.",
+                    )
+                fh.write(chunk)
+    finally:
+        file.file.close()
+    return written
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.post("/upload_cv", response_model=UploadCVResponse, status_code=status.HTTP_201_CREATED)
-async def upload_cv(
+def upload_cv(
     file: UploadFile = File(...),
     consent: bool = Form(default=False),
-    db: Session = Depends(get_db),
+    db: Client = Depends(get_db),
 ):
     """
     Upload a PDF CV.
@@ -138,8 +243,11 @@ async def upload_cv(
     - Parses with Gemini
     - Stores parsed data in DB
     - Requires consent=true
+
+    NOTE: this is a sync `def`, not `async def` — it does blocking file and
+    DB I/O, so FastAPI runs it in a threadpool instead of the event loop.
     """
-    trace = new_trace()
+    trace_id = new_trace()
 
     if not consent:
         raise HTTPException(
@@ -156,13 +264,20 @@ async def upload_cv(
     candidate_id = str(uuid.uuid4())
     dest = UPLOADS_CV / f"{candidate_id}.pdf"
 
-    try:
-        with dest.open("wb") as fh:
-            shutil.copyfileobj(file.file, fh)
-    finally:
-        file.file.close()
+    _save_upload(file, dest, MAX_CV_BYTES)
 
-    log.info("api.upload_cv.saved", candidate_id=candidate_id, path=str(dest))
+    # Minimal content sniff: real PDFs start with "%PDF-". Extension alone
+    # is trivially spoofable.
+    with dest.open("rb") as fh:
+        header = fh.read(5)
+    if header != b"%PDF-":
+        dest.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="File does not appear to be a valid PDF.",
+        )
+
+    log.info("api.upload_cv.saved", trace_id=trace_id, candidate_id=candidate_id, path=str(dest))
 
     try:
         candidate, parsed = ingest_cv(
@@ -172,8 +287,7 @@ async def upload_cv(
             consent_given=True,
         )
     except Exception as exc:
-        log.error("api.upload_cv.failed", candidate_id=candidate_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=f"CV parsing failed: {exc}")
+        _fail(trace_id, "api.upload_cv.failed", exc, "CV parsing failed.")
 
     return UploadCVResponse(
         candidate_id=candidate_id,
@@ -189,13 +303,15 @@ async def upload_cv(
     response_model=StartInterviewResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def start_interview_endpoint(
+def start_interview_endpoint(
     body: StartInterviewRequest,
-    db: Session = Depends(get_db),
+    db: Client = Depends(get_db),
 ):
     """
     Generate personalised interview questions and open a session.
     """
+    trace_id = new_trace()
+
     if not body.consent_confirmed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -212,16 +328,21 @@ async def start_interview_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        log.error("api.start_interview.failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Question generation failed: {exc}")
+        _fail(trace_id, "api.start_interview.failed", exc, "Question generation failed.")
 
-    # Map DB question IDs back to the generated questions (by order)
-    db_questions = (
-        db.query(Question)
-        .filter_by(session_id=session.id)
-        .order_by(Question.question_index)
-        .all()
-    )
+    # Use the questions returned by the orchestrator directly instead of
+    # re-querying the DB — start_interview() already returns the persisted
+    # objects, and a redundant query here previously masked any mismatch
+    # between what's returned and what's actually stored.
+    if not questions:
+        result = (
+            db.table(TABLE_QUESTIONS)
+            .select("*")
+            .eq("session_id", session.id)
+            .order("question_index")
+            .execute()
+        )
+        questions = [Question.from_row(row) for row in (result.data or [])]
 
     return StartInterviewResponse(
         session_id=session.id,
@@ -232,7 +353,7 @@ async def start_interview_endpoint(
                 skill_targeted=q.skill_targeted,
                 question_type=q.question_type,
             )
-            for q in db_questions
+            for q in questions
         ],
     )
 
@@ -241,36 +362,33 @@ async def start_interview_endpoint(
     "/upload_answer/{session_id}/{question_id}",
     response_model=AnswerUploadResponse,
 )
-async def upload_answer(
+def upload_answer(
     session_id: str,
     question_id: str,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: Client = Depends(get_db),
 ):
     """
-    Upload a WAV answer for a specific question.
+    Upload an audio answer for a specific question.
 
     - Saves audio to uploads/audio/
     - Transcribes with Whisper
     - Evaluates with Gemini
     - Returns transcript + scores
     """
-    allowed_ext = {".wav", ".mp3", ".m4a", ".ogg", ".webm"}
+    trace_id = new_trace()
+
     suffix = Path(file.filename or "audio.wav").suffix.lower()
-    if suffix not in allowed_ext:
+    if suffix not in ALLOWED_AUDIO_EXT:
         raise HTTPException(
             status_code=422,
-            detail=f"Unsupported audio format. Accepted: {sorted(allowed_ext)}",
+            detail=f"Unsupported audio format. Accepted: {sorted(ALLOWED_AUDIO_EXT)}",
         )
 
     audio_id = str(uuid.uuid4())
     dest = UPLOADS_AUDIO / f"{audio_id}{suffix}"
 
-    try:
-        with dest.open("wb") as fh:
-            shutil.copyfileobj(file.file, fh)
-    finally:
-        file.file.close()
+    _save_upload(file, dest, MAX_AUDIO_BYTES)
 
     try:
         answer, assessment = process_answer(
@@ -282,10 +400,10 @@ async def upload_answer(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        _fail(trace_id, "api.upload_answer.missing_dependency", exc,
+              "Answer processing failed due to a missing resource.")
     except Exception as exc:
-        log.error("api.upload_answer.failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Answer processing failed: {exc}")
+        _fail(trace_id, "api.upload_answer.failed", exc, "Answer processing failed.")
 
     return AnswerUploadResponse(
         answer_id=answer.id,
@@ -297,18 +415,19 @@ async def upload_answer(
 
 
 @app.post("/finalize/{session_id}", status_code=status.HTTP_200_OK)
-async def finalize_session_endpoint(session_id: str, db: Session = Depends(get_db)):
+def finalize_session_endpoint(session_id: str, db: Client = Depends(get_db)):
     """
     Trigger final report generation once all answers are uploaded.
     Advances session to awaiting_hr status.
     """
+    trace_id = new_trace()
+
     try:
         report = finalize_session(db, session_id=session_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        log.error("api.finalize.failed", session_id=session_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Report generation failed: {exc}")
+        _fail(trace_id, "api.finalize.failed", exc, "Report generation failed.")
 
     return {
         "session_id": session_id,
@@ -320,21 +439,37 @@ async def finalize_session_endpoint(session_id: str, db: Session = Depends(get_d
 
 
 @app.get("/get_report/{session_id}", response_model=ReportResponse)
-async def get_report(session_id: str, db: Session = Depends(get_db)):
+def get_report(session_id: str, db: Client = Depends(get_db)):
     """
     Return the final AI-generated report for HR review.
     NOTE: hr_decision will be null until HR acts via /hr_decision.
     """
-    report: FinalReport | None = (
-        db.query(FinalReport).filter_by(session_id=session_id).first()
+    report_result = (
+        db.table(TABLE_FINAL_REPORTS)
+        .select("*")
+        .eq("session_id", session_id)
+        .limit(1)
+        .execute()
     )
-    if report is None:
+    if not report_result.data:
         raise HTTPException(
             status_code=404,
             detail=f"No report found for session {session_id!r}. Call /finalize first.",
         )
+    report = FinalReport.from_row(report_result.data[0])
 
-    session = db.query(InterviewSession).filter_by(id=session_id).first()
+    session_result = (
+        db.table(TABLE_SESSIONS)
+        .select("*")
+        .eq("id", session_id)
+        .limit(1)
+        .execute()
+    )
+    session = (
+        InterviewSession.from_row(session_result.data[0])
+        if session_result.data
+        else None
+    )
 
     return ReportResponse(
         session_id=session_id,
@@ -354,9 +489,16 @@ async def get_report(session_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/hr_decision", response_model=HRDecisionResponse)
-async def hr_decision_endpoint(
+def hr_decision_endpoint(
     body: HRDecisionRequest,
-    db: Session = Depends(get_db),
+    db: Client = Depends(get_db),
+    # TODO: add an auth dependency here, e.g.:
+    #   current_user: AuthedUser = Depends(get_current_hr_user)
+    # and verify current_user.id == body.hr_reviewer_id (or drop
+    # hr_reviewer_id from the request body entirely and derive it from the
+    # authenticated session). Without this, hr_reviewer_id is just a
+    # self-reported string and the "mandatory human-in-the-loop" guarantee
+    # is not actually enforced.
 ):
     """
     Record a mandatory HR decision.
@@ -369,6 +511,8 @@ async def hr_decision_endpoint(
     This is the ONLY way a decision reaches a candidate.
     Auto-rejection is architecturally impossible.
     """
+    trace_id = new_trace()
+
     try:
         report = require_hr_decision(
             db,
@@ -380,8 +524,7 @@ async def hr_decision_endpoint(
     except (ValueError, HILViolationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        log.error("api.hr_decision.failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Decision recording failed: {exc}")
+        _fail(trace_id, "api.hr_decision.failed", exc, "Decision recording failed.")
 
     return HRDecisionResponse(
         session_id=body.session_id,
@@ -397,5 +540,16 @@ async def hr_decision_endpoint(
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
-async def health():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+def health(db: Client = Depends(get_db)):
+    db_ok = True
+    try:
+        db.table(TABLE_SESSIONS).select("id").limit(1).execute()
+    except Exception as exc:
+        db_ok = False
+        log.error("api.health.db_check_failed", error=str(exc))
+
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "db": "ok" if db_ok else "unreachable",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

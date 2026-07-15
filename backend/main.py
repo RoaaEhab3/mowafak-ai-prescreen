@@ -23,22 +23,48 @@ CHANGELOG (review fixes applied — see accompanying review notes):
   - A single trace id is created per request and threaded through all log
     calls for that request.
 
+  Integration-completion pass (this changeset):
+  - hr_decision is now a Literal["approved", "rejected", "hold"] instead of
+    a bare `str`, so FastAPI/pydantic rejects invalid values at the API
+    boundary (a 422) instead of forwarding an arbitrary string into
+    hil_gate.require_hr_decision().
+  - Added a session-state guard: /upload_answer and /finalize reject (409)
+    once a session is closed — either "awaiting_hr" (set by
+    report_generator._persist_report) or "decided" (set by
+    hil_gate.require_hr_decision). Blocking "decided" matters most: it stops
+    a new answer or a regenerated report from landing underneath an HR
+    decision the audit log has already recorded. It is not a full state
+    machine — see "Still NOT implemented" below.
+  - Removed the unused `shutil` import.
+
+  Deliberately NOT done: deleting uploaded CV/audio after processing. It was
+  proposed (PII minimisation) but rejected for now on two grounds: (1) the
+  brief's Requirement 2 explicitly says "Store the audio file + transcript in
+  SQLite linked to the candidate session"; and (2) Candidate.cv_file_path and
+  Answer.audio_file_path persist those paths, so deleting the files would
+  leave dangling references to non-existent files. If we do want retention
+  limits, it should be an explicit, documented policy (null the path columns
+  + a retention rule in responsible_ai/RAI_Config.yaml), not a silent unlink.
+
   Still NOT implemented here (needs decisions from other files / infra,
   flagged with TODO):
   - Authentication/authorization. There is currently no verification that
     the caller of /hr_decision is actually the HR reviewer named in the
     request body. This MUST be added before production use.
-  - Session state-machine guards (e.g. rejecting /upload_answer after a
-    session has been finalized). Depends on what orchestrator.py already
-    enforces — revisit once that file is reviewed.
+  - Full session state-machine guards beyond the single "already
+    finalized" check added above (e.g. rejecting /upload_answer before a
+    session has questions, or after HR has already decided). The complete
+    state vocabulary is owned by orchestrator.py / hil_gate.py, which are
+    not available to this changeset — revisit once those files are
+    reviewed.
 """
 from __future__ import annotations
 
 import os
-import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,6 +138,17 @@ MAX_CV_BYTES = 10 * 1024 * 1024        # 10 MB
 MAX_AUDIO_BYTES = 50 * 1024 * 1024     # 50 MB
 ALLOWED_AUDIO_EXT = {".wav", ".mp3", ".m4a", ".ogg", ".webm"}
 
+# Session statuses that mean "this session is closed to further processing".
+#   awaiting_hr : report_generator._persist_report() set it — the report exists
+#                 and is queued for HR review.
+#   decided     : hil_gate.require_hr_decision() set it — HR has already made
+#                 the call. Mutating a decided session would let a new answer
+#                 or a regenerated report land underneath a recorded HR
+#                 decision, which the audit log would not reflect.
+# Not a full state machine (it doesn't police the earlier pending ->
+# in_progress transitions), but it closes both terminal states.
+SESSION_STATUSES_CLOSED = frozenset({"awaiting_hr", "decided"})
+
 
 @app.on_event("startup")
 async def startup() -> None:
@@ -172,7 +209,10 @@ class ReportResponse(BaseModel):
 
 class HRDecisionRequest(BaseModel):
     session_id: str
-    hr_decision: str          # approved | rejected | hold
+    # Tightened from `str` to a closed set of allowed values: FastAPI/pydantic
+    # now rejects anything else with a 422 at the API boundary, instead of
+    # letting an arbitrary string reach hil_gate.require_hr_decision().
+    hr_decision: Literal["approved", "rejected", "hold"]
     hr_reviewer_id: str
     hr_notes: str
 
@@ -226,6 +266,21 @@ def _save_upload(file: UploadFile, dest: Path, max_bytes: int) -> int:
     finally:
         file.file.close()
     return written
+
+
+def _session_status(db: Client, session_id: str) -> str | None:
+    """Fetch just the `status` column for a session, or None if not found.
+
+    Small helper used by the partial state-machine guard below. Kept
+    intentionally minimal (one column, no full row hydration) since it's
+    only used for a pre-flight check, not to construct an InterviewSession.
+    """
+    result = (
+        db.table(TABLE_SESSIONS).select("status").eq("id", session_id).limit(1).execute()
+    )
+    if not result.data:
+        return None
+    return result.data[0].get("status")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -378,6 +433,19 @@ def upload_answer(
     """
     trace_id = new_trace()
 
+    # Session-state guard: refuse new answers once the session is closed —
+    # either finalized (report awaiting HR) or already decided by HR. Accepting
+    # an answer after a decision would silently change the evidence under a
+    # recorded HR decision.
+    existing_status = _session_status(db, session_id)
+    if existing_status in SESSION_STATUSES_CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Session is '{existing_status}'; no further answers can be uploaded."
+            ),
+        )
+
     suffix = Path(file.filename or "audio.wav").suffix.lower()
     if suffix not in ALLOWED_AUDIO_EXT:
         raise HTTPException(
@@ -421,6 +489,15 @@ def finalize_session_endpoint(session_id: str, db: Client = Depends(get_db)):
     Advances session to awaiting_hr status.
     """
     trace_id = new_trace()
+
+    # Same guard as /upload_answer: don't regenerate a report for a session
+    # that's already finalized, and never overwrite one HR has decided on.
+    existing_status = _session_status(db, session_id)
+    if existing_status in SESSION_STATUSES_CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Session is '{existing_status}'; it cannot be finalized again.",
+        )
 
     try:
         report = finalize_session(db, session_id=session_id)

@@ -164,11 +164,23 @@
     <!-- Place matching JavaScript runtime script attachment block directly underneath in next prompt cycle -->
      <!-- STAGE 2: JAVASCRIPT LOGIC ENGINE -->
     <script>
+        // --- Configuration ---
+        // Point this at your FastAPI backend. Change when deploying off localhost.
+        const API_BASE = 'http://localhost:8000';
+
         // --- Core Application State Management ---
         let currentQuestionIndex = 0;
+        // Each entry is the backend's question object: {id, question_text, skill_targeted, question_type}
         let interviewQuestions = [];
-        let sessionCandidateId = "cand_" + Math.random().toString(36).substring(2, 9); // Generated unique ID session
-        
+        // The session the backend creates in /start_interview. Answers are addressed
+        // to /upload_answer/{session_id}/{question_id}, so we must keep both.
+        let sessionId = null;
+
+        // The candidate_id is MINTED BY THE BACKEND in /upload_cv and handed to this
+        // page as ?candidate_id=... by the CV upload page. It must never be generated
+        // client-side: the backend only knows ids it stored itself.
+        const sessionCandidateId = new URLSearchParams(window.location.search).get('candidate_id');
+
         // Audio Recorder State Variables
         let mediaRecorder = null;
         let audioChunks = [];
@@ -215,35 +227,67 @@
         // --- Step 2: Initialize Session & Fetch Questions from FastAPI Backend ---
         async function initializeInterviewSession() {
             updateStatus('loading', 'Fetching Questions...');
-            
+
+            // No candidate_id => the candidate reached this page without uploading a
+            // CV. Fail loudly: there is nothing to generate questions from.
+            if (!sessionCandidateId) {
+                showFatal(
+                    'Missing application reference.',
+                    'Please start from the CV upload page so we can prepare questions from your CV.'
+                );
+                return;
+            }
+
             try {
-                // Connect directly to your FastAPI backend endpoint
-                const response = await fetch('http://localhost:8000/start_interview', {
+                const response = await fetch(`${API_BASE}/start_interview`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ candidate_id: sessionCandidateId })
+                    // consent_confirmed is REQUIRED: the backend returns 400 without it.
+                    // The candidate has just ticked the consent gate to get here.
+                    body: JSON.stringify({
+                        candidate_id: sessionCandidateId,
+                        consent_confirmed: true
+                    })
                 });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    interviewQuestions = data.questions || [
-                        "Can you describe a challenging technical data pipeline issue you resolved recently?",
-                        "How do you approach designing a reliable schema for unstructured or semi-structured data matrices?",
-                        "Explain your experience working with multi-agent orchestration architectures or workflows."
-                    ];
-                } else {
-                    throw new Error("Backend connection failed");
+
+                if (!response.ok) {
+                    const detail = await response.text();
+                    throw new Error(`start_interview failed (${response.status}): ${detail}`);
+                }
+
+                const data = await response.json();
+                // Backend shape: { session_id, questions: [{id, question_text, ...}] }
+                sessionId = data.session_id;
+                interviewQuestions = data.questions || [];
+
+                if (!sessionId || interviewQuestions.length === 0) {
+                    throw new Error('Backend returned no session or questions.');
                 }
             } catch (error) {
-                console.warn("Using fallback local screening questions due to offline backend server orchestration.");
-                interviewQuestions = [
-                    "Can you describe a challenging technical data pipeline issue you resolved recently?",
-                    "How do you approach designing a reliable schema for unstructured or semi-structured data matrices?",
-                    "Explain your experience working with multi-agent orchestration architectures or workflows."
-                ];
+                // Deliberately NO local fallback questions here. Previously this page
+                // silently swapped in hardcoded questions when the backend failed, so
+                // it looked like it worked while nothing was ever recorded against the
+                // session — answers went nowhere and HR saw an empty queue.
+                console.error('Interview session could not be started:', error);
+                showFatal(
+                    'We could not start your interview.',
+                    'The screening service is unavailable right now. Please try again shortly — your application has been saved.'
+                );
+                return;
             }
 
             renderCurrentQuestion();
+        }
+
+        // Replace the workspace with an honest error instead of pretending to work.
+        function showFatal(title, message) {
+            updateStatus('error', 'Unavailable');
+            questionIndexBadge.textContent = '';
+            questionTextContainer.textContent = title;
+            recordingInstruction.textContent = message;
+            speakBtn.disabled = true;
+            recordBtn.disabled = true;
+            recordBtn.classList.add('opacity-40', 'cursor-not-allowed');
         }
 
         // --- Step 3: Render and Display Active Question ---
@@ -255,7 +299,9 @@
 
             // Reset UI for the new question
             questionIndexBadge.textContent = `Question ${currentQuestionIndex + 1} of ${interviewQuestions.length}`;
-            questionTextContainer.textContent = interviewQuestions[currentQuestionIndex];
+            // Questions are backend objects, not strings — render .question_text
+            // (assigning the object directly would print "[object Object]").
+            questionTextContainer.textContent = interviewQuestions[currentQuestionIndex].question_text;
             
             // Clean up old audio records
             recordedBlob = null;
@@ -283,7 +329,9 @@
                 // Stop any speech that is currently playing
                 window.speechSynthesis.cancel();
                 
-                const utterance = new SpeechSynthesisUtterance(interviewQuestions[currentQuestionIndex]);
+                const utterance = new SpeechSynthesisUtterance(
+                    interviewQuestions[currentQuestionIndex].question_text
+                );
                 
                 // Automatically match local languages if needed (supports Arabic or English)
                 utterance.lang = 'en-US'; 
@@ -331,7 +379,13 @@
                 };
 
                 mediaRecorder.onstop = () => {
-                    recordedBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    // Use the recorder's ACTUAL mime type. MediaRecorder with no
+                    // options records webm/opus in Chrome — labelling that blob
+                    // 'audio/wav' (as this did) mislabels the bytes and made us
+                    // upload webm data under a .wav filename.
+                    recordedBlob = new Blob(audioChunks, {
+                        type: mediaRecorder.mimeType || 'audio/webm'
+                    });
                     audioPlayback.src = URL.createObjectURL(recordedBlob);
                     playbackContainer.classList.remove('hidden');
                     
@@ -408,33 +462,62 @@
             submitAnswerBtn.disabled = true;
             reRecordBtn.disabled = true;
 
+            const question = interviewQuestions[currentQuestionIndex];
+
+            // Name the file after the recorder's real container so the backend's
+            // extension check (.wav/.mp3/.m4a/.ogg/.webm) matches the actual bytes.
+            const ext = (recordedBlob.type.split('/')[1] || 'webm').split(';')[0];
+
+            // The backend takes ONLY the audio file; the session and question are
+            // identified by the URL path, not by form fields.
             const formData = new FormData();
-            formData.append('audio', recordedBlob, `candidate_${sessionCandidateId}_q_${currentQuestionIndex}.wav`);
-            formData.append('candidate_id', sessionCandidateId);
-            formData.append('question_index', currentQuestionIndex);
-            formData.append('question_text', interviewQuestions[currentQuestionIndex]);
+            formData.append('file', recordedBlob, `answer_${currentQuestionIndex}.${ext}`);
 
             try {
-                const response = await fetch('http://localhost:8000/upload_answer', {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch(
+                    `${API_BASE}/upload_answer/${encodeURIComponent(sessionId)}/${encodeURIComponent(question.id)}`,
+                    { method: 'POST', body: formData }
+                );
 
-                if (response.ok) {
-                    currentQuestionIndex++;
-                    renderCurrentQuestion();
-                } else {
-                    throw new Error("Server processed upload response with runtime failure exceptions.");
+                if (!response.ok) {
+                    const detail = await response.text();
+                    throw new Error(`upload_answer failed (${response.status}): ${detail}`);
                 }
-            } catch (error) {
-                console.error("Upload routing network exception:", error);
-                alert("Network communication issue sending audio data. Moving to next step for prototyping simulation purposes.");
-                
-                // Fallback simulation processing logic for demo testing
+
                 currentQuestionIndex++;
+
+                // Last answer in? Ask the backend to generate the final report.
+                // Without this the report is never drafted and HR's review queue
+                // stays empty — the interview would just silently end.
+                if (currentQuestionIndex >= interviewQuestions.length) {
+                    await finalizeInterview();
+                }
+
                 renderCurrentQuestion();
+            } catch (error) {
+                // No "advance anyway" fallback: previously a failed upload still
+                // moved the candidate on, so answers vanished while the UI acted
+                // as though everything had been submitted.
+                console.error('Answer upload failed:', error);
+                updateStatus('error', 'Upload Failed');
+                recordingInstruction.textContent =
+                    'We could not upload your answer. Please check your connection and try submitting again.';
+                submitAnswerBtn.disabled = false;
+                reRecordBtn.disabled = false;
             }
         });
+
+        // --- Step 7b: Finalize — triggers report generation for HR review ---
+        async function finalizeInterview() {
+            updateStatus('loading', 'Finalising…');
+            const response = await fetch(`${API_BASE}/finalize/${encodeURIComponent(sessionId)}`, {
+                method: 'POST'
+            });
+            if (!response.ok) {
+                const detail = await response.text();
+                throw new Error(`finalize failed (${response.status}): ${detail}`);
+            }
+        }
 
         // --- Step 8: Visual Status Indicator State Switches ---
         function updateStatus(state, message) {
@@ -446,6 +529,7 @@
                 case 'recording': statusDot.className += "bg-red-500 animate-ping"; break;
                 case 'playing': statusDot.className += "bg-purple-500"; break;
                 case 'loading': statusDot.className += "bg-amber-500 animate-pulse"; break;
+                case 'error': statusDot.className += "bg-red-600"; break;
                 default: statusDot.className += "bg-gray-400";
             }
         }

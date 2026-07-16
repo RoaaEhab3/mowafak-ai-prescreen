@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mowafak — Apply for a Role</title>
+    <title>Mowafak — CV Upload</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -13,139 +13,104 @@
 </head>
 <body class="h-full flex flex-col justify-between text-gray-800">
 
-    <!-- Global Header -->
+    <!-- Header (unchanged) -->
     <header class="bg-white border-b border-gray-200 py-4 px-6 shadow-sm">
         <div class="max-w-3xl mx-auto flex justify-between items-center">
             <div class="flex items-center space-x-3">
-                <div class="h-9 w-9 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md shadow-blue-200">M</div>
+                <div class="h-9 w-9 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md">M</div>
                 <div>
-                    <h1 class="text-lg font-bold text-gray-900 tracking-tight leading-none">Mowafak</h1>
-                    <p class="text-xs text-gray-500 font-medium mt-0.5">Async Pre-Screen Portal</p>
+                    <h1 class="text-lg font-bold text-gray-900">Mowafak</h1>
+                    <p class="text-xs text-gray-500">Async Pre-Screen Portal</p>
                 </div>
-            </div>
-            <div class="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 font-semibold rounded-full border border-blue-100 uppercase tracking-wider">
-                Candidate Space
             </div>
         </div>
     </header>
 
-    <!-- Main Content Container -->
     <main class="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
-        <div class="w-full max-w-2xl bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden transition-all duration-300">
+        <div class="w-full max-w-2xl bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
 
-            <!-- STAGE 1: APPLICATION FORM + CV UPLOAD -->
+            <!-- CV Upload Stage -->
             <div id="upload-stage" class="block p-6 sm:p-8">
-                <div class="text-center mb-6">
-                    <div class="inline-flex items-center justify-center w-12 h-12 bg-blue-100 text-blue-600 rounded-full mb-3">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11v6m-3-3h6"></path></svg>
+                <div class="text-center mb-8">
+                    <div class="inline-flex items-center justify-center w-12 h-12 bg-blue-100 text-blue-600 rounded-full mb-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
                     </div>
-                    <h2 class="text-xl sm:text-2xl font-bold text-gray-900">Start Your Application</h2>
-                    <p class="text-sm text-gray-500 mt-1">Tell us about yourself and share your CV to begin.</p>
+                    <h2 class="text-2xl font-bold text-gray-900">Upload Your CV</h2>
+                    <p class="text-sm text-gray-500 mt-2">We'll analyze it and generate personalized interview questions</p>
                 </div>
 
-                <!-- Candidate Info Fields -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-                    <div>
-                        <label for="full-name" class="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
-                        <input id="full-name" type="text" placeholder="e.g. Nourhan Adel" class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                    </div>
-                    <div>
-                        <label for="email" class="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
-                        <input id="email" type="email" placeholder="you@example.com" class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                    </div>
-                </div>
-                <div class="mb-6">
-                    <label for="applied-role" class="block text-xs font-semibold text-gray-600 mb-1.5">Role You're Applying For</label>
-                    <select id="applied-role" class="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                        <option value="">Select a role…</option>
-                        <option value="Junior Backend Developer">Junior Backend Developer</option>
-                        <option value="Junior Data Engineer">Junior Data Engineer</option>
-                        <option value="Junior Frontend Developer">Junior Frontend Developer</option>
-                        <option value="Junior Full-Stack Developer">Junior Full-Stack Developer</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-
-                <!-- CV Dropzone -->
-                <label for="cv-file-input" class="block text-xs font-semibold text-gray-600 mb-1.5">Your CV</label>
-                <div id="dropzone" class="relative border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer transition mb-2 hover:border-blue-400 hover:bg-blue-50/40">
-                    <input id="cv-file-input" type="file" accept=".pdf,.doc,.docx" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                <label for="cv-file-input" class="block text-xs font-semibold text-gray-600 mb-1.5">Your CV (PDF)</label>
+                <div id="dropzone" class="relative border-2 border-dashed border-gray-300 rounded-2xl p-10 text-center cursor-pointer transition hover:border-blue-400 hover:bg-blue-50">
+                    <input id="cv-file-input" type="file" accept=".pdf" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    
                     <div id="dropzone-empty-state">
-                        <svg class="w-8 h-8 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                        <p class="text-sm font-medium text-gray-700">Drag & drop your CV, or click to browse</p>
-                        <p class="text-xs text-gray-400 mt-1">PDF or Word — max 10MB</p>
+                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p class="text-lg font-medium text-gray-700">Drag & drop your CV here</p>
+                        <p class="text-sm text-gray-500 mt-1">or click to browse • PDF only • Max 10MB</p>
                     </div>
+
                     <div id="dropzone-file-state" class="hidden">
-                        <svg class="w-8 h-8 mx-auto text-blue-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <p id="dropzone-filename" class="text-sm font-medium text-gray-800 truncate px-4"></p>
-                        <button id="clear-file-btn" type="button" class="text-xs text-blue-600 hover:text-blue-700 font-semibold mt-1 relative z-10">Remove file</button>
+                        <svg class="w-12 h-12 mx-auto text-blue-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p id="dropzone-filename" class="text-sm font-medium text-gray-800"></p>
+                        <button id="clear-file-btn" class="text-xs text-blue-600 hover:text-blue-700 mt-2">Remove file</button>
                     </div>
                 </div>
-                <p id="file-error" class="text-xs text-red-600 font-medium mb-4 hidden"></p>
 
-                <!-- Transparency & Consent Box -->
-                <div class="bg-gray-50 rounded-xl border border-gray-200 p-4 sm:p-5 mb-6 text-sm text-gray-600 space-y-3 max-h-48 overflow-y-auto">
-                    <p class="font-semibold text-gray-900">Transparency Notice & Mandatory Disclosure:</p>
-                    <p>Your CV will be parsed by an AI system to extract structured information (skills, experience, education) so we can generate relevant pre-screening interview questions.</p>
-                    <p class="border-l-4 border-blue-500 pl-3 bg-blue-50/50 py-1 font-medium text-gray-800">
-                        Critical Governance Guarantee: This extraction is advisory only. No automated accept/reject decision is made from your CV. A human HR manager reviews your full application before any decision is made.
-                    </p>
-                    <p>Your CV and extracted data are stored securely and are auditable at any time to guarantee full regulatory oversight.</p>
+                <p id="file-error" class="text-xs text-red-600 font-medium mt-3 text-center hidden"></p>
+
+                <div class="bg-gray-50 rounded-xl border border-gray-200 p-5 mt-8 text-sm text-gray-600">
+                    <p class="font-semibold text-gray-900 mb-2">Transparency Notice</p>
+                    <p>Your CV will be securely processed by AI to extract skills and experience. All final decisions are made by humans.</p>
                 </div>
 
-                <div class="flex items-start mb-6">
-                    <div class="flex items-center h-5">
-                        <input id="consent-checkbox" type="checkbox" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded cursor-pointer transition">
-                    </div>
-                    <label id="consent-label" for="consent-checkbox" class="ml-3 text-sm text-gray-600 select-none cursor-pointer">
-                        I explicitly give consent for my CV to be processed and structured by AI systems, with final review handled by a human manager.
+                <div class="flex items-start mt-6 mb-8">
+                    <input id="consent-checkbox" type="checkbox" class="mt-1 focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                    <label for="consent-checkbox" class="ml-3 text-sm text-gray-600 cursor-pointer">
+                        I consent to my CV being parsed and stored for this pre-screening process.
                     </label>
                 </div>
 
-                <button id="submit-application-btn" disabled class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl shadow-md transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2">
-                    <span id="submit-btn-text">Submit Application</span>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                <button id="submit-application-btn" disabled 
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-4 px-6 rounded-2xl shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span id="submit-btn-text">Upload CV & Start Pre-Screen</span>
                 </button>
-                <p id="submit-error" class="text-xs text-red-600 font-medium mt-3 text-center hidden"></p>
             </div>
 
-            <!-- STAGE 2: SUCCESS / CONTINUE TO INTERVIEW -->
+            <!-- Success Stage -->
             <div id="success-stage" class="hidden p-8 text-center">
                 <div class="inline-flex items-center justify-center w-16 h-16 bg-green-100 text-green-600 rounded-full mb-4">
                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 </div>
-                <h2 class="text-2xl font-bold text-gray-900 tracking-tight">CV Received</h2>
-                <p class="text-sm text-gray-500 mt-2 max-w-sm mx-auto">
-                    Your application is saved. Next, we'll generate a short set of voice pre-screen questions based on your background.
-                </p>
-                <a id="continue-btn" href="#" class="inline-flex items-center justify-center space-x-2 mt-6 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-xl shadow-md transition-all duration-200">
-                    <span>Continue to Voice Pre-Screen</span>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                <h2 class="text-2xl font-bold text-gray-900">CV Uploaded Successfully</h2>
+                <p class="text-gray-500 mt-2">We'll now generate your personalized voice interview questions.</p>
+                
+                <a id="continue-btn" href="#" 
+                   class="inline-flex items-center justify-center space-x-2 mt-8 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3.5 px-8 rounded-2xl shadow-md transition-all">
+                    <span>Continue to Voice Interview</span>
+                    <span>→</span>
                 </a>
-                <p class="text-xs text-gray-400 italic mt-6">You can safely close this window and return later using the link emailed to you.</p>
             </div>
 
         </div>
     </main>
 
-    <!-- Global Compliance Footer -->
-    <footer class="bg-gray-50 border-t border-gray-200 py-3 px-6 text-center text-xs text-gray-400 font-medium">
-        Mowafak Assessment Platform &middot; Structured Under NYC AEDT & EU AI Act Guardrails &middot; System Cost: $0
+    <footer class="bg-gray-50 border-t border-gray-200 py-4 text-center text-xs text-gray-400">
+        Mowafak Assessment Platform • Human-in-the-Loop Hiring
     </footer>
 
     <script>
-        // Point this at your FastAPI backend. Change when deploying off localhost.
-        const API_BASE = 'http://localhost:8000';
-        // Name of the interview page this hands off to — adjust if you rename/relocate it.
-        const INTERVIEW_PAGE = 'candidate_app-record.html';
 
+        const INTERVIEW_PAGE = 'record.html';
+
+        // ... (UI elements same as before)
         const uploadStage = document.getElementById('upload-stage');
         const successStage = document.getElementById('success-stage');
-
-        const fullNameInput = document.getElementById('full-name');
-        const emailInput = document.getElementById('email');
-        const roleSelect = document.getElementById('applied-role');
-
         const dropzone = document.getElementById('dropzone');
         const fileInput = document.getElementById('cv-file-input');
         const dropzoneEmptyState = document.getElementById('dropzone-empty-state');
@@ -153,41 +118,33 @@
         const dropzoneFilename = document.getElementById('dropzone-filename');
         const clearFileBtn = document.getElementById('clear-file-btn');
         const fileError = document.getElementById('file-error');
-
         const consentCheckbox = document.getElementById('consent-checkbox');
         const submitBtn = document.getElementById('submit-application-btn');
         const submitBtnText = document.getElementById('submit-btn-text');
-        const submitError = document.getElementById('submit-error');
         const continueBtn = document.getElementById('continue-btn');
 
-        const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
-        const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx'];
-
         let selectedFile = null;
+        const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-        function showFileError(message) {
-            fileError.textContent = message;
+        function showError(msg) {
+            fileError.textContent = msg;
             fileError.classList.remove('hidden');
         }
 
-        function clearFileError() {
-            fileError.textContent = '';
+        function clearError() {
             fileError.classList.add('hidden');
         }
 
         function setSelectedFile(file) {
-            const ext = '.' + file.name.split('.').pop().toLowerCase();
-            if (!ALLOWED_EXTENSIONS.includes(ext)) {
-                showFileError('Please upload a PDF or Word document (.pdf, .doc, .docx).');
-                fileInput.value = '';
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                showError('Only PDF files are allowed.');
                 return;
             }
             if (file.size > MAX_FILE_BYTES) {
-                showFileError('File is too large. Please keep it under 10MB.');
-                fileInput.value = '';
+                showError('File is too large. Maximum size is 10MB.');
                 return;
             }
-            clearFileError();
+            clearError();
             selectedFile = file;
             dropzoneFilename.textContent = file.name;
             dropzoneEmptyState.classList.add('hidden');
@@ -195,32 +152,20 @@
             evaluateFormValidity();
         }
 
+        // File input & drag-drop (same)
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files && e.target.files[0]) {
-                setSelectedFile(e.target.files[0]);
-            }
+            if (e.target.files[0]) setSelectedFile(e.target.files[0]);
         });
 
-        // Drag-and-drop visuals + handling
-        ['dragenter', 'dragover'].forEach(evt => {
-            dropzone.addEventListener(evt, (e) => {
-                e.preventDefault();
-                dropzone.classList.add('dropzone-active');
-            });
-        });
-        ['dragleave', 'drop'].forEach(evt => {
-            dropzone.addEventListener(evt, (e) => {
-                e.preventDefault();
-                dropzone.classList.remove('dropzone-active');
-            });
-        });
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dropzone-active'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dropzone-active'));
         dropzone.addEventListener('drop', (e) => {
-            const file = e.dataTransfer.files && e.dataTransfer.files[0];
-            if (file) setSelectedFile(file);
+            e.preventDefault();
+            dropzone.classList.remove('dropzone-active');
+            if (e.dataTransfer.files[0]) setSelectedFile(e.dataTransfer.files[0]);
         });
 
-        clearFileBtn.addEventListener('click', (e) => {
-            e.preventDefault();
+        clearFileBtn.addEventListener('click', () => {
             selectedFile = null;
             fileInput.value = '';
             dropzoneFileState.classList.add('hidden');
@@ -229,62 +174,51 @@
         });
 
         function evaluateFormValidity() {
-            const hasName = fullNameInput.value.trim().length > 0;
-            const hasEmail = emailInput.value.trim().length > 0;
-            const hasRole = roleSelect.value.length > 0;
-            const hasFile = selectedFile !== null;
-            const hasConsent = consentCheckbox.checked;
-            submitBtn.disabled = !(hasName && hasEmail && hasRole && hasFile && hasConsent);
+            submitBtn.disabled = !(selectedFile && consentCheckbox.checked);
         }
 
-        [fullNameInput, emailInput, roleSelect, consentCheckbox].forEach(el => {
-            el.addEventListener('input', evaluateFormValidity);
-            el.addEventListener('change', evaluateFormValidity);
-        });
+        consentCheckbox.addEventListener('change', evaluateFormValidity);
 
-        function generateCandidateId() {
-            return 'cand_' + Math.random().toString(36).substring(2, 9);
-        }
-
+        // === MODIFIED SUBMIT LOGIC (no backend needed) ===
         submitBtn.addEventListener('click', async () => {
-            submitError.classList.add('hidden');
-            submitBtn.disabled = true;
-            submitBtnText.textContent = 'Uploading…';
+    if (!selectedFile) return;
 
-            const candidateId = generateCandidateId();
+    submitBtn.disabled = true;
+    submitBtnText.textContent = 'Uploading...';
 
-            const formData = new FormData();
-            formData.append('cv', selectedFile, selectedFile.name);
-            formData.append('candidate_id', candidateId);
-            formData.append('full_name', fullNameInput.value.trim());
-            formData.append('email', emailInput.value.trim());
-            formData.append('applied_role', roleSelect.value);
-            formData.append('consent_given', 'true');
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('consent', 'true');   // Important!
 
-            try {
-                const response = await fetch(`${API_BASE}/upload_cv`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Server rejected upload (status ${response.status}).`);
-                }
-
-                // Hand off the same candidate_id to the interview page so the
-                // voice pre-screen questions are generated from THIS CV.
-                continueBtn.href = `${INTERVIEW_PAGE}?candidate_id=${encodeURIComponent(candidateId)}`;
-                uploadStage.classList.add('hidden');
-                successStage.classList.remove('hidden');
-
-            } catch (error) {
-                console.error('CV upload failed:', error);
-                submitError.textContent = 'We couldn\'t upload your CV. Please check your connection and try again.';
-                submitError.classList.remove('hidden');
-                submitBtn.disabled = false;
-                submitBtnText.textContent = 'Submit Application';
-            }
+    try {
+        const response = await fetch('http://localhost:8000/upload_cv', {
+            method: 'POST',
+            body: formData,                    // ← Multipart, not JSON
+            // Do NOT set Content-Type header (browser sets it automatically)
         });
+
+        if (response.ok) {
+            const result = await response.json();
+            console.log("CV uploaded successfully:", result);
+            
+            // Move to success screen
+            uploadStage.classList.add('hidden');
+            successStage.classList.remove('hidden');
+            
+            // Optional: pass candidate_id to interview page
+            continueBtn.href = `candidate_app-record.html?candidate_id=${result.candidate_id}`;
+        } else {
+            const error = await response.json();
+            alert(`Upload failed: ${error.detail || 'Unknown error'}`);
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Network error while uploading CV");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtnText.textContent = 'Upload CV & Start Pre-Screen';
+    }
+});
     </script>
 </body>
 </html>

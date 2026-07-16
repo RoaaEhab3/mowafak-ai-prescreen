@@ -11,6 +11,12 @@ structlog.configure(
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
+        # Render tracebacks for any log call made with exc_info=True/an exception.
+        # Without this we logged only str(exc) — e.g. "argument of type 'NoneType'
+        # is not iterable" — with no file or line, which made errors raised inside
+        # third-party libraries (whisper, google-generativeai) effectively
+        # untraceable. Log the stack, not just the message.
+        structlog.processors.format_exc_info,
         structlog.dev.ConsoleRenderer(),
     ],
     wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),

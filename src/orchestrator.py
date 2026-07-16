@@ -68,14 +68,25 @@ def _get_stt() -> WhisperSTT:
 
 
 def _retry(fn: Callable, retries: int = 3, delay: float = 1.0):
-    """Simple synchronous retry with exponential backoff."""
+    """Simple synchronous retry with exponential backoff.
+
+    Retry warnings include the traceback (exc_info): this wrapper is the only
+    thing standing between a failure inside whisper / google-generativeai and
+    the caller, so if it logs just str(exc) the origin of the error is lost.
+    """
     for attempt in range(1, retries + 1):
         try:
             return fn()
         except Exception as exc:
             if attempt == retries:
                 raise
-            log.warning("orchestrator.retry", attempt=attempt, error=str(exc))
+            log.warning(
+                "orchestrator.retry",
+                attempt=attempt,
+                error=str(exc),
+                error_type=type(exc).__name__,
+                exc_info=exc,
+            )
             time.sleep(delay * attempt)
 
 

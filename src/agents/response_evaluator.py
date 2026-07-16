@@ -57,8 +57,22 @@ class ResponseEvaluator:
     """Gemini-backed evaluator. Instantiate once and reuse across answers."""
 
     def __init__(self, model_name: str | None = None):
+        resolved = model_name or settings.gemini_model
+        # Validate before handing it to the SDK. GenerativeModel does
+        # `if "/" not in model_name`, so a None/empty value dies inside the
+        # library as "argument of type 'NoneType' is not iterable" — a TypeError
+        # with no hint that the real problem is unset config.
+        if not isinstance(resolved, str) or not resolved.strip():
+            raise ValueError(
+                f"Gemini model name is invalid ({resolved!r}). Set GEMINI_MODEL "
+                "in your .env (e.g. gemini-2.0-flash)."
+            )
+        if not isinstance(settings.gemini_api_key, str) or not settings.gemini_api_key.strip():
+            raise ValueError(
+                "GEMINI_API_KEY is missing/empty. Set it in your .env."
+            )
         self.model = genai.GenerativeModel(
-            model_name or settings.gemini_model,
+            resolved,
             system_instruction=RESPONSE_EVALUATOR_SYSTEM,
         )
 

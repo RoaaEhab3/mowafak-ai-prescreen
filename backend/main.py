@@ -238,7 +238,17 @@ def _fail(trace_id: str, event: str, exc: Exception, client_message: str, status
     leaking stack traces, file paths, or upstream (Gemini/Whisper) error
     payloads that may contain sensitive detail.
     """
-    log.error(event, trace_id=trace_id, error=str(exc), error_type=type(exc).__name__)
+    # exc_info=exc logs the FULL traceback server-side. Previously this recorded
+    # only str(exc), so a TypeError raised deep inside whisper/google-generativeai
+    # surfaced as a bare message with no file or line — undebuggable. The client
+    # still receives only the generic message + trace id below.
+    log.error(
+        event,
+        trace_id=trace_id,
+        error=str(exc),
+        error_type=type(exc).__name__,
+        exc_info=exc,
+    )
     raise HTTPException(
         status_code=status_code,
         detail=f"{client_message} (reference: {trace_id})",

@@ -11,6 +11,7 @@ FFMPEG_BIN env var at the directory containing ffmpeg.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 # NOTE: `import whisper` is deliberately deferred to WhisperSTT.__init__ rather
@@ -27,8 +28,34 @@ if _ffmpeg_bin:
     os.environ["PATH"] = _ffmpeg_bin + os.pathsep + os.environ.get("PATH", "")
 
 
+def assert_ffmpeg_available() -> None:
+    """Fail fast, and readably, if ffmpeg isn't callable.
+
+    Whisper shells out to ffmpeg to decode audio, and the candidate page records
+    webm/opus, so ffmpeg is mandatory in practice. Without this check a missing
+    ffmpeg only shows up later as an opaque error from inside the library.
+    """
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            "ffmpeg was not found on PATH. Whisper needs it to decode audio "
+            "(the candidate page records webm/opus). Install ffmpeg, or set the "
+            "FFMPEG_BIN env var to the directory containing the ffmpeg binary."
+        )
+
+
 class WhisperSTT:
     def __init__(self, model_name: str = "base"):
+        # Validate config and environment BEFORE the heavy import, so a
+        # misconfiguration reports itself clearly instead of failing later
+        # (or masquerading as a missing-module error).
+        if not model_name:
+            raise ValueError(
+                "Whisper model name is empty/None. Set WHISPER_MODEL in .env "
+                "(base | small | medium) — an empty value reaches whisper as a "
+                "bad model id and fails deep inside the library."
+            )
+        assert_ffmpeg_available()
+
         import whisper  # deferred heavy import (torch/numba) — see module note
 
         self.model = whisper.load_model(model_name)

@@ -188,6 +188,9 @@
         let recordStartTime = 0;
         let recordedBlob = null;
         let isRecording = false;
+        // True once the current question's answer has been POSTed successfully,
+        // so a finalize-retry doesn't re-upload it. Reset per question.
+        let answerUploadedForCurrent = false;
 
         // --- DOM Elements Extraction ---
         const consentCheckbox = document.getElementById('consent-checkbox');
@@ -305,6 +308,7 @@
             
             // Clean up old audio records
             recordedBlob = null;
+            answerUploadedForCurrent = false;
             audioChunks = [];
             audioPlayback.src = '';
             playbackContainer.classList.add('hidden');
@@ -347,17 +351,9 @@
         });
 
         // --- Step 5: MediaRecorder API (Microphone Capture Management) ---
-        recordBtn.addEventListener('click', async () => {
-            if (!isRecording) {
-                // Stop text-to-speech immediately if it is speaking
-                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-                await startAudioRecording();
-            } else {
-                stopAudioRecording();
-            }
-        });
-
-        // --- Step 5: MediaRecorder API (Microphone Capture Management) ---
+        // NOTE: registered exactly ONCE. A previous copy of this handler was
+        // duplicated, so a single click fired both — starting two MediaRecorders
+        // + two timers (one leaked) and, on stop, re-triggering a third recording.
         recordBtn.addEventListener('click', async () => {
             if (!isRecording) {
                 // Stop text-to-speech immediately if it is speaking
@@ -463,6 +459,7 @@
             reRecordBtn.disabled = true;
 
             const question = interviewQuestions[currentQuestionIndex];
+            const isLastQuestion = currentQuestionIndex >= interviewQuestions.length - 1;
 
             // Name the file after the recorder's real container so the backend's
             // extension check (.wav/.mp3/.m4a/.ogg/.webm) matches the actual bytes.
@@ -474,25 +471,33 @@
             formData.append('file', recordedBlob, `answer_${currentQuestionIndex}.${ext}`);
 
             try {
-                const response = await fetch(
-                    `${API_BASE}/upload_answer/${encodeURIComponent(sessionId)}/${encodeURIComponent(question.id)}`,
-                    { method: 'POST', body: formData }
-                );
-
-                if (!response.ok) {
-                    const detail = await response.text();
-                    throw new Error(`upload_answer failed (${response.status}): ${detail}`);
+                // Upload the answer only once. If we already uploaded it on a
+                // previous click and only the FINALIZE step failed, skip straight
+                // to retrying finalize — otherwise a retry would create a
+                // duplicate answer row.
+                if (!answerUploadedForCurrent) {
+                    const response = await fetch(
+                        `${API_BASE}/upload_answer/${encodeURIComponent(sessionId)}/${encodeURIComponent(question.id)}`,
+                        { method: 'POST', body: formData }
+                    );
+                    if (!response.ok) {
+                        const detail = await response.text();
+                        throw new Error(`upload_answer failed (${response.status}): ${detail}`);
+                    }
+                    answerUploadedForCurrent = true;
                 }
 
-                currentQuestionIndex++;
-
-                // Last answer in? Ask the backend to generate the final report.
-                // Without this the report is never drafted and HR's review queue
-                // stays empty — the interview would just silently end.
-                if (currentQuestionIndex >= interviewQuestions.length) {
+                // On the LAST question, finalize BEFORE advancing the index. If
+                // finalize throws we stay on this question (index unchanged,
+                // answerUploadedForCurrent still true) so the retry only
+                // re-runs finalize — previously the index was bumped first, so a
+                // finalize failure left currentQuestionIndex past the end and the
+                // next click hit `interviewQuestions[undefined].id` -> TypeError.
+                if (isLastQuestion) {
                     await finalizeInterview();
                 }
 
+                currentQuestionIndex++;
                 renderCurrentQuestion();
             } catch (error) {
                 // No "advance anyway" fallback: previously a failed upload still

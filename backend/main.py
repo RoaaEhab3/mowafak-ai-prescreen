@@ -147,7 +147,10 @@ ALLOWED_AUDIO_EXT = {".wav", ".mp3", ".m4a", ".ogg", ".webm"}
 #                 decision, which the audit log would not reflect.
 # Not a full state machine (it doesn't police the earlier pending ->
 # in_progress transitions), but it closes both terminal states.
-SESSION_STATUSES_CLOSED = frozenset({"awaiting_hr", "decided"})
+# The status a session reaches once its report has been generated and it is
+# queued for HR review (set by report_generator._persist_report).
+SESSION_STATUS_AWAITING_HR = "awaiting_hr"
+SESSION_STATUSES_CLOSED = frozenset({SESSION_STATUS_AWAITING_HR, "decided"})
 
 
 @app.on_event("startup")
@@ -176,8 +179,10 @@ class StartInterviewRequest(BaseModel):
 class InterviewQuestionOut(BaseModel):
     id: str          # DB Question.id
     question_text: str
-    skill_targeted: str
-    question_type: str
+    # Nullable in the schema (and Question.from_row yields None), so these must
+    # be Optional or a question row with a NULL skill/type 500s the endpoint.
+    skill_targeted: str | None = None
+    question_type: str | None = None
 
 
 class StartInterviewResponse(BaseModel):
@@ -204,6 +209,15 @@ class ReportResponse(BaseModel):
     areas_for_development: list[str]
     hr_decision: str | None
     hr_decided_at: str | None
+    status: str
+
+
+class PendingReportOut(BaseModel):
+    """One row in the HR review queue (a session awaiting an HR decision)."""
+    session_id: str
+    candidate_id: str
+    overall_score: float
+    ai_recommendation: str
     status: str
 
 
@@ -558,19 +572,24 @@ def get_report(session_id: str, db: Client = Depends(get_db)):
         else None
     )
 
+    # hr_decided_at is hydrated from the DB by FinalReport.from_row(), where a
+    # timestamptz comes back as an ISO STRING (not a datetime). Calling
+    # .isoformat() on it 500s the endpoint the moment HR has decided — which is
+    # exactly the state a reviewer re-fetches. It's already serialized, so pass
+    # it through. The `or <default>` guards coerce any NULL column (SELECT *
+    # returns the key with value None, which .get(col, default) does NOT mask)
+    # so a NULL score/text can't trip pydantic on a non-Optional field.
     return ReportResponse(
         session_id=session_id,
         candidate_id=session.candidate_id if session else "unknown",
-        overall_score=report.overall_score,
-        ai_recommendation=report.ai_recommendation,
-        written_summary=report.written_summary,
+        overall_score=report.overall_score or 0.0,
+        ai_recommendation=report.ai_recommendation or "weak_no",
+        written_summary=report.written_summary or "",
         per_skill_ratings=report.per_skill_ratings or {},
         strengths=report.strengths or [],
         areas_for_development=report.areas_for_development or [],
         hr_decision=report.hr_decision,
-        hr_decided_at=(
-            report.hr_decided_at.isoformat() if report.hr_decided_at else None
-        ),
+        hr_decided_at=report.hr_decided_at or None,
         status=session.status if session else "unknown",
     )
 
@@ -622,6 +641,50 @@ def hr_decision_endpoint(
             "This decision is now immutable."
         ),
     )
+
+
+# ── HR review queue ───────────────────────────────────────────────────────────
+
+@app.get("/pending_reports", response_model=list[PendingReportOut])
+def pending_reports(db: Client = Depends(get_db)):
+    """List sessions awaiting an HR decision (status = 'awaiting_hr').
+
+    Powers the HR review UI (app.py): it enumerates candidates whose report has
+    been generated but who have not yet received a decision. Sessions already
+    'decided' are intentionally excluded.
+    """
+    trace_id = new_trace()
+    try:
+        sres = (
+            db.table(TABLE_SESSIONS)
+            .select("*")
+            .eq("status", SESSION_STATUS_AWAITING_HR)
+            .execute()
+        )
+        out: list[PendingReportOut] = []
+        for s in sres.data or []:
+            rres = (
+                db.table(TABLE_FINAL_REPORTS)
+                .select("*")
+                .eq("session_id", s["id"])
+                .limit(1)
+                .execute()
+            )
+            if not rres.data:
+                continue  # awaiting_hr but no report row yet — skip defensively
+            r = rres.data[0]
+            out.append(
+                PendingReportOut(
+                    session_id=s["id"],
+                    candidate_id=s.get("candidate_id", "unknown"),
+                    overall_score=r.get("overall_score") or 0.0,
+                    ai_recommendation=r.get("ai_recommendation") or "weak_no",
+                    status=s.get("status", SESSION_STATUS_AWAITING_HR),
+                )
+            )
+        return out
+    except Exception as exc:
+        _fail(trace_id, "api.pending_reports.failed", exc, "Could not list pending reports.")
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

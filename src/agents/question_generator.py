@@ -54,11 +54,15 @@ def generate_questions(
         settings.gemini_model,
         system_instruction=QUESTION_GENERATOR_SYSTEM,
     )
-    response = model.generate_content(prompt)
-    text = re.sub(r"^```[a-z]*\n?", "", response.text.strip())
-    text = re.sub(r"\n?```$", "", text)
 
     try:
+        # generate_content and response.text must be INSIDE the try: if Gemini
+        # safety-blocks or returns no candidate, `response.text` raises, and the
+        # documented "pipeline can continue" fallback below only helps if that
+        # raise is caught here.
+        response = model.generate_content(prompt)
+        text = re.sub(r"^```[a-z]*\n?", "", response.text.strip())
+        text = re.sub(r"\n?```$", "", text)
         raw_list = json.loads(text)
         questions = [InterviewQuestion(**q) for q in raw_list]
         log.info(

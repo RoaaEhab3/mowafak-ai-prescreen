@@ -21,3 +21,6 @@ python-multipart
 pydantic>=2
 pydantic-settings
 python-dotenv
+# app.py (Chainlit HR UI) calls the backend over HTTP. httpx is already pulled
+# in transitively by supabase/chainlit, but the HR UI imports it directly.
+httpx

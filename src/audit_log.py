@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,18 @@ from src.observability import log
 # Sentinel previous_hash used by the very first entry in the chain, since
 # there is no prior entry to link back to.
 GENESIS_HASH = "GENESIS"
+
+# Serializes the read-last-hash -> compute -> append critical section of
+# write_audit_entry(). FastAPI runs the sync endpoints in a threadpool, so two
+# overlapping requests could otherwise both read the same previous_hash and
+# append two entries pointing at it — forking the chain and making a legitimate
+# ledger fail verify_chain() with reason="broken_link". This lock guarantees a
+# single linear writer WITHIN this process.
+#
+# NOTE: this does NOT cover multiple processes (e.g. `uvicorn --workers 2`). If
+# the API is ever run multi-process, replace this with a cross-process file lock
+# (portalocker / fcntl / msvcrt) or serialize audit writes through the DB.
+_write_lock = threading.Lock()
 
 
 def _sha256(text: str) -> str:
@@ -124,20 +137,26 @@ def write_audit_entry(
         "metadata": metadata or {},
     }
 
-    # --- Hash-chain linkage --------------------------------------------
-    # previous_hash ties this entry to whatever was written immediately
-    # before it (or to GENESIS_HASH if this is the first entry ever).
-    previous_hash = _get_last_hash()
-    entry["previous_hash"] = previous_hash
-    # current_hash is a SHA-256 digest over this entry's own contents plus
-    # previous_hash. Tampering with this entry, or with any earlier entry
-    # (which would change the previous_hash values downstream), is detectable
-    # via verify_chain().
-    entry["current_hash"] = compute_hash(entry)
+    # --- Hash-chain linkage (atomic) -----------------------------------
+    # Reading the last hash, stamping this entry with it, and appending must be
+    # a single critical section — otherwise two concurrent writers link to the
+    # same previous_hash and fork the chain. Hold the lock across read+compute+
+    # append only (not the DB call below), so the JSONL ledger stays strictly
+    # linear.
+    with _write_lock:
+        # previous_hash ties this entry to whatever was written immediately
+        # before it (or to GENESIS_HASH if this is the first entry ever).
+        previous_hash = _get_last_hash()
+        entry["previous_hash"] = previous_hash
+        # current_hash is a SHA-256 digest over this entry's own contents plus
+        # previous_hash. Tampering with this entry, or with any earlier entry
+        # (which would change the previous_hash values downstream), is
+        # detectable via verify_chain().
+        entry["current_hash"] = compute_hash(entry)
 
-    # 1. Append to JSONL (survives DB loss). Append-only: existing lines are
-    # never rewritten or removed.
-    _append_jsonl(entry)
+        # Append to JSONL (survives DB loss). Append-only: existing lines are
+        # never rewritten or removed.
+        _append_jsonl(entry)
 
     # 2. Persist to DB (insert only — never update/delete). The hash-chain
     # fields ride along inside metadata_json so no DB schema change is

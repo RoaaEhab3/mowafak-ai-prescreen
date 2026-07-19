@@ -92,10 +92,13 @@ def parse_cv(file_path: Path | str, candidate_id: str) -> ParsedCV:
         return ParsedCV(candidate_id=candidate_id)
 
     model = genai.GenerativeModel(settings.gemini_model)
-    response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
-    cleaned = _clean_gemini_json(response.text)
 
     try:
+        # Keep the LLM call + response.text access inside the try so a
+        # safety-blocked/empty Gemini response falls back to a minimal ParsedCV
+        # instead of raising (response.text throws when there is no candidate).
+        response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
+        cleaned = _clean_gemini_json(response.text)
         data = json.loads(cleaned)
         parsed = ParsedCV(candidate_id=candidate_id, **data)
         log.info("cv_parse.success", candidate_id=candidate_id,
@@ -112,10 +115,10 @@ def parse_cv_from_text(raw_text: str, candidate_id: str) -> ParsedCV:
     log.info("cv_parse_text.start", candidate_id=candidate_id)
 
     model = genai.GenerativeModel(settings.gemini_model)
-    response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
-    cleaned = _clean_gemini_json(response.text)
 
     try:
+        response = model.generate_content(PARSE_PROMPT.format(cv_text=raw_text[:8000]))
+        cleaned = _clean_gemini_json(response.text)
         data = json.loads(cleaned)
         return ParsedCV(candidate_id=candidate_id, **data)
     except Exception as exc:

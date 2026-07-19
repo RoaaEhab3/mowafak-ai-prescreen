@@ -22,8 +22,12 @@ create table if not exists interview_sessions (
     candidate_id uuid not null references candidates(id) on delete cascade,
     role text,
     status text not null default 'in_progress',
+    completed_at timestamptz,
     created_at timestamptz not null default now()
 );
+
+-- If interview_sessions already exists from an earlier schema, add the column.
+alter table interview_sessions add column if not exists completed_at timestamptz;
 
 create table if not exists questions (
     id uuid primary key default gen_random_uuid(),

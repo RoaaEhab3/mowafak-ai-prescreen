@@ -211,7 +211,20 @@ def generate_report(db: Client, session_id: str) -> FinalReport:
             strengths=[],
             areas_for_development=["No voice answers received; cannot evaluate."],
         )
-        return _persist_report(db, report, session_id)
+        _persist_report(db, report, session_id)
+        # Still audit-log: this path also produces an HR-actionable report, and
+        # the ledger must record that a report was generated for every session
+        # (previously this early return skipped the write_audit_entry below,
+        # leaving a gap in the append-only trail).
+        write_audit_entry(
+            db,
+            session_id=session_id,
+            candidate_id=(candidate.id if candidate else session.candidate_id),
+            event_type="report_generated",
+            ai_recommendation=report.ai_recommendation,
+            metadata={"overall_score": report.overall_score, "question_count": 0},
+        )
+        return report
 
     # Compute the raw average once; reused both for logging context and as the
     # fallback score/recommendation if Gemini output can't be used.
@@ -249,7 +262,10 @@ def generate_report(db: Client, session_id: str) -> FinalReport:
         raw_data = json.loads(text)
         parsed = ReportOutput.model_validate(raw_data)
 
-        overall_score = float(parsed.overall_score)
+        # Clamp to the documented 1.0–5.0 scale — the model occasionally returns
+        # an out-of-range number (e.g. 8.5), which would otherwise be persisted
+        # and skew _recommendation_from_score.
+        overall_score = max(1.0, min(5.0, float(parsed.overall_score)))
         ai_recommendation = parsed.recommendation
         if ai_recommendation not in VALID_RECOMMENDATIONS:
             ai_recommendation = _recommendation_from_score(overall_score)
